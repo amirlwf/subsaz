@@ -18,7 +18,7 @@
 ### ۲. بیلد
 
 ```bat
-cd C:\path\to\wordsub
+cd C:\path\to\subsaz
 pip install -r requirements.txt
   pyinstaller subsaz-gui.spec
   pyinstaller subsaz-cli.spec

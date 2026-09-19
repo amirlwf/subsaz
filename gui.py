@@ -481,12 +481,17 @@ class App:
             os.startfile(d)
 
     def _dnd_hook(self):
+        # Real drag&drop on a plain CTk root: load tkdnd into this
+        # interpreter, then register the (plain-tk) file list as target.
         try:
-            from tkinterdnd2 import DND_FILES
+            from tkinterdnd2 import DND_FILES, TkinterDnD
+            TkinterDnD.require(self.root)
             self.lst.drop_target_register(DND_FILES)
             self.lst.bind("<<Drop>>", self._on_drop)
-        except ImportError:
-            pass
+            self._dnd = True
+            _bc("dnd enabled")
+        except Exception as e:  # noqa: BLE001 — DnD stays optional
+            _bc("dnd unavailable: %r" % e)
 
     def _on_drop(self, event):
         import re as _re

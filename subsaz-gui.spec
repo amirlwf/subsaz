@@ -6,7 +6,8 @@ datas = [("assets", "assets")]
 binaries = []
 hiddenimports = ["customtkinter", "huggingface_hub", "psutil"]
 
-for pkg in ("faster_whisper", "ctranslate2", "av", "customtkinter"):
+for pkg in ("faster_whisper", "ctranslate2", "av", "customtkinter",
+            "tkinterdnd2"):
     tmp = collect_all(pkg)
     datas += tmp[0]
     binaries += tmp[1]

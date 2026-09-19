@@ -1,0 +1,10 @@
+# runtime
+customtkinter==6.0.0
+faster-whisper==1.2.1
+huggingface_hub==1.32.0
+psutil==7.2.2
+# optional: drag & drop files onto the GUI list
+# tkinterdnd2
+
+# build / packaging (dev machines + CI only)
+pyinstaller==6.22.3

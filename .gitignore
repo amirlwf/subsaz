@@ -1,0 +1,31 @@
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# pyinstaller
+build/
+dist/
+*.spec.bak
+
+# local runs
+gui_started.log
+wordsub_tmp/
+*.wav
+*.srt
+
+# sample media (do not commit large binaries)
+*.mp4
+*.mkv
+*.mov
+*.webm
+*.mp3
+*.wav
+
+# portable ffmpeg is added at build time, never committed (~200MB)
+assets/bin/*.exe
+
+# models are downloaded at runtime, never committed
+models/

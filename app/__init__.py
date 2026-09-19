@@ -1,0 +1,1 @@
+"""WordSub application package."""

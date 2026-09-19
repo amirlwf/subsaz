@@ -1,0 +1,53 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt
+          pip install tkinterdnd2
+
+      - name: Fetch portable ffmpeg
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip ffmpeg-dl
+          $bin = Get-ChildItem ffmpeg-dl -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          Copy-Item $bin.FullName assets/bin/ffmpeg.exe
+          $probe = Get-ChildItem ffmpeg-dl -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          Copy-Item $probe.FullName assets/bin/ffprobe.exe
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller wordsub-gui.spec
+          pyinstaller wordsub-cli.spec
+
+      - name: Portable ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/WordSub/* -DestinationPath WordSub-portable-win64.zip
+
+      - name: Inno Setup installer
+        run: |
+          choco install innosetup --no-progress -y
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer/wordsub.iss
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            WordSub-portable-win64.zip
+            release/WordSub-Setup-*.exe

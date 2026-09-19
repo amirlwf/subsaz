@@ -11,6 +11,18 @@ dist/
 release/
 *.spec.bak
 
+# SpecKit / AI agent workspace — local only, never committed
+.specify/
+.opencode/
+specs/
+claude/
+CLAUDE.local.md
+
+# personal notes — local only, never committed
+PERSONAL.md
+MYNOTES.md
+*.local.md
+
 # local runs
 gui_started.log
 subsaz_tmp/

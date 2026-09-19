@@ -45,12 +45,18 @@ FONT_FAMILY = "Segoe UI"
 def _register_font():
     global FONT_FAMILY
     try:
-        ttf = os.path.join(_base, "assets", "fonts", "Vazirmatn-Regular.ttf")
-        if os.path.isfile(ttf) and os.name == "nt":
-            ctypes.windll.gdi32.AddFontResourceExW(ttf, 0x10, 0)
-            FONT_FAMILY = "Vazirmatn"
-            _bc("font registered: Vazirmatn")
-            return
+        if os.name == "nt":
+            ok = 0
+            for _f in ("Vazirmatn-Regular.ttf", "Vazirmatn-Bold.ttf"):
+                ttf = os.path.join(_base, "assets", "fonts", _f)
+                if os.path.isfile(ttf):
+                    # returns number of fonts added (>0 on success)
+                    ok += ctypes.windll.gdi32.AddFontResourceExW(ttf, 0x10, 0)
+            if ok >= 2:
+                FONT_FAMILY = "Vazirmatn"
+                _bc("font registered: Vazirmatn (regular+bold)")
+                return
+            _bc("font register partial: %d" % ok)
     except Exception as e:  # noqa: BLE001
         _bc("font register failed: %r" % e)
     # fall back to a system font with good Persian shaping
@@ -94,6 +100,7 @@ class App:
         self.running = False
         self.downloading = False
         self.profile = None
+        self._ensure_font()
         self._build()
         self.root.after(120, self._poll)
         # hardware scan in background so the UI opens instantly
@@ -103,21 +110,40 @@ class App:
     def _font(self, size=13, bold=False):
         return (FONT_FAMILY, size, "bold" if bold else "normal")
 
+    def _ensure_font(self):
+        """After the Tk root exists, confirm the family is usable."""
+        global FONT_FAMILY
+        try:
+            import tkinter.font as _tkfont
+            fams = {f.lower() for f in _tkfont.families()}
+            if "vazirmatn" in fams:
+                FONT_FAMILY = "Vazirmatn"
+            elif FONT_FAMILY.lower() not in fams:
+                for cand in ("Segoe UI", "Tahoma"):
+                    if cand.lower() in fams:
+                        FONT_FAMILY = cand
+                        break
+        except Exception:  # noqa: BLE001
+            pass
+        _bc("ui font family: %s" % FONT_FAMILY)
+
     # ---------- layout ----------
     def _build(self):
         r = self.root
 
         head = ctk.CTkFrame(r)
         head.pack(fill="x", padx=10, pady=(10, 4))
+        # RTL: primary content from the right
         ctk.CTkLabel(head, text="ساب‌ساز",
-                     font=self._font(20, True)).pack(side="left", padx=12,
+                     font=self._font(20, True)).pack(side="right", padx=12,
                                                     pady=8)
         ctk.CTkLabel(
             head, text="ویدیو یا صوت بده، فایل SRT دقیق بگیر",
-            font=self._font(12)).pack(side="left", padx=4)
+            font=self._font(12)).pack(side="right", padx=4)
         self.theme_btn = ctk.CTkButton(head, text="☀ / 🌙", width=70,
+                                       font=self._font(12),
                                        command=self._toggle_theme)
-        self.theme_btn.pack(side="right", padx=12)
+        self.theme_btn.pack(side="left", padx=12)
 
         # 1. files
         files = ctk.CTkFrame(r)
@@ -127,15 +153,15 @@ class App:
                                                     pady=(8, 0))
         brow = ctk.CTkFrame(files, fg_color="transparent")
         brow.pack(fill="x", padx=8, pady=4)
-        ctk.CTkButton(brow, text="+ فایل‌ها",
-                      command=self._pick_files).pack(side="left", padx=4)
-        ctk.CTkButton(brow, text="+ پوشه",
-                      command=self._pick_folder).pack(side="left", padx=4)
-        ctk.CTkButton(brow, text="پاک کردن",
-                      fg_color="gray", command=self._clear).pack(side="left",
+        ctk.CTkButton(brow, text="+ فایل‌ها", font=self._font(12),
+                      command=self._pick_files).pack(side="right", padx=4)
+        ctk.CTkButton(brow, text="+ پوشه", font=self._font(12),
+                      command=self._pick_folder).pack(side="right", padx=4)
+        ctk.CTkButton(brow, text="پاک کردن", font=self._font(12),
+                      fg_color="gray", command=self._clear).pack(side="right",
                                                                  padx=4)
         self.lst = tk.Listbox(files, height=5, activestyle="dotbox",
-                              font=(FONT_FAMILY, 10),
+                              font=(FONT_FAMILY, 11),
                               bg="#2b2b2b", fg="#eee",
                               selectbackground="#1f6feb")
         self.lst.pack(fill="x", padx=12, pady=(0, 8))
@@ -160,21 +186,23 @@ class App:
         self.rec_label.pack(anchor="e", padx=12, pady=2)
         mrow = ctk.CTkFrame(hw, fg_color="transparent")
         mrow.pack(fill="x", padx=8, pady=4)
-        ctk.CTkLabel(mrow, text="مدل:", font=self._font(12)).pack(side="left",
-                                                                  padx=4)
+        ctk.CTkLabel(mrow, text="مدل:", font=self._font(12),
+                     justify="right").pack(side="right", padx=4)
         self.model_var = tk.StringVar(value=self.cfg.get("model", "auto"))
         self.model_box = ctk.CTkComboBox(mrow, variable=self.model_var,
                                          values=list(MODELS), width=170,
+                                         font=self._font(12),
                                          command=self._on_model_change)
-        self.model_box.pack(side="left", padx=4)
+        self.model_box.pack(side="right", padx=4)
         self.dl_btn = ctk.CTkButton(mrow, text="⬇ دانلود مدل",
+                                    font=self._font(12),
                                     command=self._download_model)
-        self.dl_btn.pack(side="left", padx=4)
-        ctk.CTkButton(mrow, text="🔄 اسکن مجدد",
+        self.dl_btn.pack(side="right", padx=4)
+        ctk.CTkButton(mrow, text="🔄 اسکن مجدد", font=self._font(12),
                       fg_color="gray",
-                      command=self._rescan).pack(side="left", padx=4)
+                      command=self._rescan).pack(side="right", padx=4)
         self.dl_prog = ctk.CTkProgressBar(mrow, width=160)
-        self.dl_prog.pack(side="right", padx=8)
+        self.dl_prog.pack(side="left", padx=8)
         self.dl_prog.set(0)
 
         # 3. subtitle settings
@@ -186,78 +214,77 @@ class App:
         g = ctk.CTkFrame(st, fg_color="transparent")
         g.pack(fill="x", padx=8, pady=4)
 
-        ctk.CTkLabel(g, text="زبان:", font=self._font(12)).grid(row=0,
-                                                                column=0,
-                                                                padx=4)
+        # RTL grid: column 4 = rightmost (first item starts at right)
+        ctk.CTkLabel(g, text="زبان:", font=self._font(12),
+                     justify="right").grid(row=0, column=4, padx=4, sticky="e")
         self.lang_var = tk.StringVar(value=self.cfg.get("lang", "en"))
         ctk.CTkComboBox(g, variable=self.lang_var, values=("en", "fa"),
-                        width=80).grid(row=0, column=1, padx=4)
+                        width=80, font=self._font(12)).grid(row=0, column=3,
+                                                            padx=4)
 
-        ctk.CTkLabel(g, text="حالت:", font=self._font(12)).grid(row=0,
-                                                                column=2,
-                                                                padx=4)
+        ctk.CTkLabel(g, text="حالت:", font=self._font(12),
+                     justify="right").grid(row=0, column=2, padx=4, sticky="e")
         self.mode_var = tk.StringVar(value=self.cfg.get("mode", "single"))
         ctk.CTkComboBox(g, variable=self.mode_var,
-                        values=("single", "two"), width=100).grid(row=0,
-                                                                  column=3,
-                                                                  padx=4)
+                        values=("single", "two"), width=100,
+                        font=self._font(12)).grid(row=0, column=1, padx=4)
         ctk.CTkLabel(g, text="(two = دوخطی پریمیر)",
-                     font=self._font(11),
-                     text_color="gray").grid(row=0, column=4, padx=4)
+                     font=self._font(11), justify="right",
+                     text_color="gray").grid(row=0, column=0, padx=4,
+                                             sticky="e")
 
-        ctk.CTkLabel(g, text="کلمه/خط:", font=self._font(12)).grid(row=1,
-                                                                   column=0,
-                                                                   padx=4,
-                                                                   pady=4)
+        ctk.CTkLabel(g, text="کلمه/خط:", font=self._font(12),
+                     justify="right").grid(row=1, column=3, padx=4, pady=4,
+                                           sticky="e")
         self.words_var = tk.StringVar(
             value=str(self.cfg.get("words_per_line", 3)))
         ctk.CTkComboBox(g, variable=self.words_var,
-                        values=("1", "2", "3", "4", "5", "6"),
-                        width=80).grid(row=1, column=1, padx=4, pady=4)
+                        values=("1", "2", "3", "4", "5", "6"), width=80,
+                        font=self._font(12)).grid(row=1, column=2, padx=4,
+                                                  pady=4)
 
-        ctk.CTkLabel(g, text="حروف/خط:", font=self._font(12)).grid(row=1,
-                                                                   column=2,
-                                                                   padx=4,
-                                                                   pady=4)
+        ctk.CTkLabel(g, text="حروف/خط:", font=self._font(12),
+                     justify="right").grid(row=1, column=1, padx=4, pady=4,
+                                           sticky="e")
         self.chars_var = tk.StringVar(
             value=str(self.cfg.get("max_chars", 32)))
         ctk.CTkComboBox(g, variable=self.chars_var,
                         values=("20", "24", "28", "32", "36", "42", "50"),
-                        width=80).grid(row=1, column=3, padx=4, pady=4)
+                        width=80, font=self._font(12)).grid(row=1, column=0,
+                                                            padx=4, pady=4)
 
-        ctk.CTkLabel(g, text="گپ (ثانیه):", font=self._font(12)).grid(row=2,
-                                                                      column=0,
-                                                                      padx=4,
-                                                                      pady=4)
+        ctk.CTkLabel(g, text="گپ (ثانیه):", font=self._font(12),
+                     justify="right").grid(row=2, column=3, padx=4, pady=4,
+                                           sticky="e")
         self.gap_var = tk.StringVar(value=str(self.cfg.get("max_gap", 0.8)))
-        ctk.CTkEntry(g, textvariable=self.gap_var, width=80).grid(row=2,
-                                                                  column=1,
-                                                                  padx=4,
-                                                                  pady=4)
-        ctk.CTkLabel(g, text="مکث (ثانیه):",
-                     font=self._font(12)).grid(row=2, column=2, padx=4,
-                                               pady=4)
+        ctk.CTkEntry(g, textvariable=self.gap_var, width=80,
+                     font=self._font(12), justify="right").grid(
+                         row=2, column=2, padx=4, pady=4)
+        ctk.CTkLabel(g, text="مکث (ثانیه):", font=self._font(12),
+                     justify="right").grid(row=2, column=1, padx=4, pady=4,
+                                           sticky="e")
         self.hold_var = tk.StringVar(value=str(self.cfg.get("hold", 1.0)))
-        ctk.CTkEntry(g, textvariable=self.hold_var, width=80).grid(row=2,
-                                                                   column=3,
-                                                                   padx=4,
-                                                                   pady=4)
+        ctk.CTkEntry(g, textvariable=self.hold_var, width=80,
+                     font=self._font(12), justify="right").grid(
+                         row=2, column=0, padx=4, pady=4)
 
         prow = ctk.CTkFrame(st, fg_color="transparent")
         prow.pack(fill="x", padx=8, pady=2)
         ctk.CTkLabel(prow, text="کلمات خاص:",
-                     font=self._font(12)).pack(side="left", padx=4)
+                     font=self._font(12)).pack(side="right", padx=4)
         self.prompt_var = tk.StringVar(value=self.cfg.get("prompt", ""))
         ctk.CTkEntry(prow, textvariable=self.prompt_var, width=340,
-                     placeholder_text="مثلا: WordLab, BrandX").pack(side="left",
-                                                                   padx=4)
+                     font=self._font(12), justify="right",
+                     placeholder_text="مثلا: WordLab, BrandX").pack(
+                         side="right", padx=4)
         ctk.CTkLabel(prow, text="خروجی:",
-                     font=self._font(12)).pack(side="left", padx=(12, 4))
+                     font=self._font(12)).pack(side="right", padx=(12, 4))
         self.out_var = tk.StringVar(value=self.cfg.get("outdir", ""))
-        ctk.CTkEntry(prow, textvariable=self.out_var, width=220).pack(
-            side="left", padx=4, fill="x", expand=True)
-        ctk.CTkButton(prow, text="…", width=40,
-                      command=self._pick_out).pack(side="left", padx=4)
+        ctk.CTkEntry(prow, textvariable=self.out_var, width=220,
+                     font=self._font(12)).pack(side="right", padx=4, fill="x",
+                                               expand=True)
+        ctk.CTkButton(prow, text="…", width=40, font=self._font(12),
+                      command=self._pick_out).pack(side="right", padx=4)
 
         # 4. run
         run = ctk.CTkFrame(r)
@@ -265,13 +292,14 @@ class App:
         self.btn = ctk.CTkButton(run, text="▶  ساخت زیرنویس (SRT)",
                                  font=self._font(14, True),
                                  command=self._start)
-        self.btn.pack(side="left", padx=8, pady=8)
+        self.btn.pack(side="right", padx=8, pady=8)
         ctk.CTkButton(run, text="باز کردن پوشه خروجی", fg_color="gray",
-                      command=self._open_out).pack(side="left", padx=4)
+                      font=self._font(12),
+                      command=self._open_out).pack(side="right", padx=4)
         self.status = ctk.CTkLabel(run, text="", font=self._font(12))
-        self.status.pack(side="right", padx=8)
+        self.status.pack(side="left", padx=8)
         self.prog = ctk.CTkProgressBar(run, width=140)
-        self.prog.pack(side="right", padx=4)
+        self.prog.pack(side="left", padx=4)
         self.prog.set(0)
 
         # log
@@ -280,7 +308,8 @@ class App:
         ctk.CTkLabel(logf, text="گزارش",
                      font=self._font(13, True)).pack(anchor="e", padx=12,
                                                     pady=(6, 0))
-        self.log = ctk.CTkTextbox(logf, height=110, font=("Consolas", 11))
+        self.log = ctk.CTkTextbox(logf, height=110,
+                                  font=self._font(12))
         self.log.pack(fill="both", expand=True, padx=8, pady=8)
         self._log("آماده. اول «اسکن سیستم» را ببین، بعد مدل را دانلود کن.")
 

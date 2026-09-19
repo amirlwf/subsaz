@@ -8,6 +8,7 @@ venv/
 # pyinstaller
 build/
 dist/
+release/
 *.spec.bak
 
 # local runs

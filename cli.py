@@ -1,4 +1,4 @@
-"""wordsub - video/audio in, word-timed SRT out (EN/FA, local faster-whisper).
+"""subsaz - video/audio in, word-timed SRT out (EN/FA, local faster-whisper).
 
 Usage:
   python cli.py video.mp4 [--lang en] [--model auto] [--words 3]
@@ -33,7 +33,7 @@ def run_one(path, args):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="wordsub: word-timed SRT, local")
+    ap = argparse.ArgumentParser(description="subsaz: word-timed SRT, local")
     ap.add_argument("video", nargs="?", default=None)
     ap.add_argument("--dir", default=None,
                     help="batch: all videos/audios in folder")

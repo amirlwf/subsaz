@@ -1,1 +1,1 @@
-"""WordSub application package."""
+"""SubSaz application package."""

@@ -18,7 +18,7 @@ def process_file(path, outdir, lang="en", model="auto", words=3,
     t0 = time.time()
     from asr import probe_full
     meta = probe_full(path)
-    td = os.path.join(os.environ.get("TEMP", "."), "wordsub_tmp")
+    td = os.path.join(os.environ.get("TEMP", "."), "subsaz_tmp")
     os.makedirs(td, exist_ok=True)
     wav = os.path.join(td, "%d_%s.wav" % (os.getpid(), base[:80]))
     extract_audio(path, wav)

@@ -1,4 +1,4 @@
-"""WordSub GUI — CustomTkinter desktop app: media in, precise SRT out."""
+"""ساب‌ساز GUI — CustomTkinter desktop app: media in, precise SRT out."""
 import ctypes
 import os
 import queue
@@ -87,7 +87,7 @@ class App:
         _bc("App.__init__ begin")
         self.cfg = app_config.load()
         self.root = root or ctk.CTk()
-        self.root.title("WordSub — زیرنویس دقیق کلمه‌به‌کلمه")
+        self.root.title("ساب‌ساز — زیرنویس دقیق کلمه‌به‌کلمه")
         self.root.geometry("860x760")
         self.root.minsize(760, 680)
         self.q = queue.Queue()
@@ -109,7 +109,7 @@ class App:
 
         head = ctk.CTkFrame(r)
         head.pack(fill="x", padx=10, pady=(10, 4))
-        ctk.CTkLabel(head, text="WordSub",
+        ctk.CTkLabel(head, text="ساب‌ساز",
                      font=self._font(20, True)).pack(side="left", padx=12,
                                                     pady=8)
         ctk.CTkLabel(
@@ -376,10 +376,10 @@ class App:
         lang = self.lang_var.get()
         name, _rec = self._rec_for(self.model_var.get(), lang)
         if model_manager.is_cached(name):
-            messagebox.showinfo("WordSub", "مدل %s قبلا دانلود شده." % name)
+            messagebox.showinfo("ساب‌ساز", "مدل %s قبلا دانلود شده." % name)
             return
         if not messagebox.askyesno(
-                "WordSub",
+                "ساب‌ساز",
                 "مدل %s (~%dMB) دانلود شود؟\n(فقط یک‌بار، برای استفاده آفلاین)"
                 % (name, MODEL_MB.get(name, 0))):
             return
@@ -403,7 +403,7 @@ class App:
                 q.put(("log", "✗ " + model_manager.VPN_MESSAGE_FA.replace(
                     "\n", " ")))
                 try:
-                    messagebox.showwarning("WordSub — خطای دانلود",
+                    messagebox.showwarning("ساب‌ساز — خطای دانلود",
                                            model_manager.VPN_MESSAGE_FA)
                 except Exception:  # noqa: BLE001
                     pass
@@ -493,11 +493,11 @@ class App:
             return
         files = list(self.lst.get(0, "end"))
         if not files:
-            messagebox.showwarning("WordSub", "اول فایل انتخاب کن.")
+            messagebox.showwarning("ساب‌ساز", "اول فایل انتخاب کن.")
             return
         outdir = self.out_var.get().strip()
         if not outdir or not os.path.isdir(outdir):
-            messagebox.showwarning("WordSub", "پوشه ذخیره خروجی را انتخاب کن.")
+            messagebox.showwarning("ساب‌ساز", "پوشه ذخیره خروجی را انتخاب کن.")
             return
         try:
             words = int(self.words_var.get())
@@ -505,14 +505,14 @@ class App:
             max_gap = float(self.gap_var.get() or 0.8)
             hold = float(self.hold_var.get() or 1.0)
         except ValueError:
-            messagebox.showwarning("WordSub", "تنظیمات عددی معتبر نیست.")
+            messagebox.showwarning("ساب‌ساز", "تنظیمات عددی معتبر نیست.")
             return
         lang = self.lang_var.get()
         model = self.model_var.get()
         name, _rec = self._rec_for(model, lang)
         if not model_manager.is_cached(name):
             messagebox.showwarning(
-                "WordSub",
+                "ساب‌ساز",
                 "مدل %s هنوز دانلود نشده.\nاول «دانلود مدل» را بزن." % name)
             return
         self._save_cfg()
@@ -545,7 +545,7 @@ class App:
                 if e.need_vpn:
                     try:
                         messagebox.showwarning(
-                            "WordSub — خطای دانلود",
+                            "ساب‌ساز — خطای دانلود",
                             model_manager.VPN_MESSAGE_FA)
                     except Exception:  # noqa: BLE001
                         pass
@@ -577,7 +577,7 @@ def boot():
     except Exception:
         _bc("boot: plain CTk failed: " + repr(traceback.format_exc()))
         try:
-            messagebox.showerror("WordSub", traceback.format_exc()[-1500:])
+            messagebox.showerror("ساب‌ساز", traceback.format_exc()[-1500:])
         except Exception:  # noqa: BLE001
             pass
 

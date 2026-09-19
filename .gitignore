@@ -13,7 +13,7 @@ release/
 
 # local runs
 gui_started.log
-wordsub_tmp/
+subsaz_tmp/
 *.wav
 *.srt
 

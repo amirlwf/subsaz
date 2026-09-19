@@ -1,8 +1,8 @@
-"""Persistent user config (JSON in %LOCALAPPDATA%/WordSub)."""
+"""Persistent user config (JSON in %LOCALAPPDATA%/SubSaz)."""
 import json
 import os
 
-APP_NAME = "WordSub"
+APP_NAME = "SubSaz"
 
 DEFAULTS = {
     "lang": "en",

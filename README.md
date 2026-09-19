@@ -1,9 +1,9 @@
-# WordSub — precise word-by-word subtitles, offline
+# ساب‌ساز (SubSaz) — precise word-by-word subtitles, offline
 
 Drop in a video or audio file, get back an accurate `.srt`.
 Local transcription with `faster-whisper` — no API, no upload.
 
-![WordSub](assets/icon.png)
+![SubSaz](assets/icon.png)
 
 ## Download
 
@@ -11,15 +11,15 @@ From the [Releases](../../releases) page:
 
 | File | What it is |
 |---|---|
-| `WordSub-Setup-x.y.z.exe` | Windows installer (Start-menu + desktop shortcut, uninstaller) |
-| `WordSub-portable-win64.zip` | Portable — unzip and run `WordSub.exe`, no install |
+| `SubSaz-Setup-x.y.z.exe` | Windows installer (Start-menu + desktop shortcut, uninstaller) |
+| `SubSaz-portable-win64.zip` | Portable — unzip and run `SubSaz.exe`, no install |
 
 > 🇮🇷 If a model download fails, connect to a VPN and retry — model weights
 > are hosted on HuggingFace, which is sanctioned. The app tells you this itself.
 
 ## First run (2 minutes)
 
-1. Open WordSub.
+1. Open SubSaz (ساب‌ساز).
 2. Look at **section 2 — System & model**: the app scans your machine
    (CPU / RAM / NVIDIA GPU) and suggests the best model for it.
 3. Press **⬇ Download model** and approve — one-time download, then fully offline.
@@ -41,7 +41,7 @@ You can also pin any model manually (`auto` = hardware pick).
 Check from the terminal anytime:
 
 ```bat
-wordsub-cli --scan
+subsaz-cli --scan
 ```
 
 ## Subtitle styles
@@ -64,12 +64,12 @@ Audio: `mp3 wav m4a aac flac ogg opus wma`
 ## CLI
 
 ```bat
-wordsub-cli video.mp4 --lang en
-wordsub-cli video.mp4 --lang fa --mode two --max-chars 36
-wordsub-cli song.mp3 --lang en --words 2
-wordsub-cli --dir C:\clips --lang en
-wordsub-cli --scan
-wordsub-cli --download-model small
+subsaz-cli video.mp4 --lang en
+subsaz-cli video.mp4 --lang fa --mode two --max-chars 36
+subsaz-cli song.mp3 --lang en --words 2
+subsaz-cli --dir C:\clips --lang en
+subsaz-cli --scan
+subsaz-cli --download-model small
 ```
 
 ## Accuracy details
@@ -98,10 +98,10 @@ app/hardware.py       machine scan + model recommendation
 app/model_manager.py  one-time download, resume, VPN error hint
 app/transcribe.py     media -> words pipeline
 app/subtitles.py      single / two-line SRT builder
-app/config.py         persistent settings (%LOCALAPPDATA%/WordSub)
+app/config.py         persistent settings (%LOCALAPPDATA%/SubSaz)
 gui.py                CustomTkinter desktop app
 cli.py                terminal interface (same engine)
-installer/wordsub.iss Inno Setup script
+installer/subsaz.iss Inno Setup script
 ```
 
 ## License

@@ -147,7 +147,7 @@ def process_file(path, outdir, lang="en", model="auto", words=3, max_chars=32,
         meta = probe_full(path)
     except Exception:
         meta = {}
-    td = os.path.join(os.environ.get("TEMP", "."), "wordsub_tmp")
+    td = os.path.join(os.environ.get("TEMP", "."), "subsaz_tmp")
     os.makedirs(td, exist_ok=True)
     wav = os.path.join(td, "%d_%s.wav" % (os.getpid(), base[:80]))
     extract_audio(path, wav)

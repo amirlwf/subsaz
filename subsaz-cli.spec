@@ -1,19 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the WordSub GUI (windowed, onedir)."""
+"""PyInstaller spec for the SubSaz CLI (console, onedir)."""
 from PyInstaller.utils.hooks import collect_all
 
 datas = [("assets", "assets")]
 binaries = []
-hiddenimports = ["customtkinter", "huggingface_hub", "psutil"]
+hiddenimports = ["huggingface_hub", "psutil"]
 
-for pkg in ("faster_whisper", "ctranslate2", "av", "customtkinter"):
+for pkg in ("faster_whisper", "ctranslate2", "av"):
     tmp = collect_all(pkg)
     datas += tmp[0]
     binaries += tmp[1]
     hiddenimports += tmp[2]
 
 a = Analysis(
-    ["gui.py"],
+    ["cli.py"],
     pathex=[],
     binaries=binaries,
     datas=datas,
@@ -32,12 +32,12 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="WordSub",
+    name="subsaz-cli",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -52,5 +52,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="WordSub",
+    name="subsaz-cli",
 )

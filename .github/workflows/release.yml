@@ -32,22 +32,22 @@ jobs:
 
       - name: Build with PyInstaller
         run: |
-          pyinstaller wordsub-gui.spec
-          pyinstaller wordsub-cli.spec
+          pyinstaller subsaz-gui.spec
+          pyinstaller subsaz-cli.spec
 
       - name: Portable ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path dist/WordSub/* -DestinationPath WordSub-portable-win64.zip
+          Compress-Archive -Path dist/SubSaz/* -DestinationPath SubSaz-portable-win64.zip
 
       - name: Inno Setup installer
         run: |
           choco install innosetup --no-progress -y
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer/wordsub.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer/subsaz.iss
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            WordSub-portable-win64.zip
-            release/WordSub-Setup-*.exe
+            SubSaz-portable-win64.zip
+            release/SubSaz-Setup-*.exe

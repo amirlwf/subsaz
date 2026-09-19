@@ -1,4 +1,4 @@
-# انتشار نسخه جدید WordSub (راهنمای فارسی)
+# انتشار نسخه جدید ساب‌ساز (راهنمای فارسی)
 
 دو خروجی می‌سازیم: **Setup.exe** (نصبی) و **portable ZIP** (پرتابل).
 دو راه داری: دستی (روی لپ‌تاپ خودت) یا خودکار (گیت‌هاب اکشن).
@@ -20,28 +20,28 @@
 ```bat
 cd C:\path\to\wordsub
 pip install -r requirements.txt
-pyinstaller wordsub-gui.spec
-pyinstaller wordsub-cli.spec
+  pyinstaller subsaz-gui.spec
+  pyinstaller subsaz-cli.spec
 ```
 
-خروجی در `dist\WordSub\` است. تست کن:
+خروجی در `dist\SubSaz\` است. تست کن:
 
 ```bat
-dist\WordSub\WordSub.exe
+dist\SubSaz\SubSaz.exe
 ```
 
 ### ۳. پرتابل ZIP
 
 ```bat
-powershell Compress-Archive -Path dist\WordSub\* -DestinationPath WordSub-portable-win64.zip
+powershell Compress-Archive -Path dist\SubSaz\* -DestinationPath SubSaz-portable-win64.zip
 ```
 
 ### ۴. نصاب Setup.exe
 
-1. فایل `installer\wordsub.iss` را باز کن و `#define MyAppVersion` را
+1. فایل `installer\subsaz.iss` را باز کن و `#define MyAppVersion` را
    با شماره نسخه جدید عوض کن (مثلا `1.1.0`).
-2. در Inno Setup دکمه Compile را بزن (یا `ISCC.exe installer\wordsub.iss`).
-3. خروجی در `release\WordSub-Setup-x.y.z.exe`.
+2. در Inno Setup دکمه Compile را بزن (یا `ISCC.exe installer\subsaz.iss`).
+3. خروجی در `release\SubSaz-Setup-x.y.z.exe`.
 
 ### ۵. انتشار در گیت‌هاب
 
@@ -51,7 +51,7 @@ git push --tags
 ```
 
 بعد در GitHub → Releases → Draft a new release → تگ را انتخاب کن و
-دو فایل (`WordSub-Setup-*.exe` و `WordSub-portable-win64.zip`) را
+دو فایل (`SubSaz-Setup-*.exe` و `SubSaz-portable-win64.zip`) را
 آپلود کن.
 
 ## راه دوم: خودکار (توصیه برای بعد)
@@ -66,7 +66,7 @@ git push --tags
 
 ## چک‌لیست قبل از انتشار
 
-- [ ] شماره نسخه در `installer\wordsub.iss` به‌روز است
-- [ ] `WordSub.exe` روی یک سیستم تمیز (بدون پایتون) باز و تست شده
+- [ ] شماره نسخه در `installer\subsaz.iss` به‌روز است
+- [ ] `SubSaz.exe` روی یک سیستم تمیز (بدون پایتون) باز و تست شده
 - [ ] دانلود مدل + پیام VPN تست شده
 - [ ] خروجی SRT روی یک ویدیو انگلیسی و یکی فارسی چک شده

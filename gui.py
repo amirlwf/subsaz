@@ -78,6 +78,7 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from app import config as app_config
+from app import bidi as bidi_helper
 from app import hardware, model_manager
 from app import transcribe as engine
 
@@ -108,8 +109,8 @@ class App:
         self.cfg = app_config.load()
         self.root = root or ctk.CTk()
         self.root.title("ساب‌ساز — زیرنویس دقیق کلمه‌به‌کلمه")
-        self.root.geometry("880x900")
-        self.root.minsize(780, 820)
+        self.root.geometry("880x980")
+        self.root.minsize(780, 880)
         try:
             self.root.configure(fg_color=ROOT_BG)
         except Exception:  # noqa: BLE001
@@ -120,7 +121,9 @@ class App:
         self.profile = None
         self._cancel = threading.Event()
         self.pv_idx = 0
+        self.pv_playing = False
         self._ensure_font()
+        self._set_window_icon()
         self._build()
         self.root.after(120, self._poll)
         # hardware scan in background so the UI opens instantly
@@ -147,6 +150,40 @@ class App:
             pass
         _bc("ui font family: %s" % FONT_FAMILY)
 
+    def _icon_path(self, name):
+        """Logo asset path that works in dev AND frozen (dist/_internal)."""
+        for cand in (os.path.join(_base, "assets", name),
+                     os.path.join(_exe_dir, "assets", name),
+                     os.path.join(_exe_dir, "_internal", "assets", name)):
+            if os.path.isfile(cand):
+                return cand
+        return None
+
+    def _set_window_icon(self):
+        """Taskbar + title-bar logo (release builds showed default Tk icon).
+
+        The EXE icon (spec) and installer icon (.iss) only cover Explorer;
+        the running window needs iconbitmap/iconphoto explicitly.
+        """
+        try:
+            ico = self._icon_path("icon.ico")
+            png = self._icon_path("icon.png")
+            if ico and os.name == "nt":
+                try:
+                    self.root.iconbitmap(default=ico)
+                except Exception:  # noqa: BLE001
+                    _bc("iconbitmap failed")
+            if png:
+                try:
+                    _ph = tk.PhotoImage(file=png)
+                    # keep a ref for the life of the app
+                    self._win_icon_ref = _ph
+                    self.root.iconphoto(True, _ph)
+                except Exception:  # noqa: BLE001
+                    _bc("iconphoto failed")
+        except Exception:  # noqa: BLE001
+            _bc("window icon failed")
+
     # ---------- layout ----------
     def _build(self):
         r = self.root
@@ -159,8 +196,8 @@ class App:
         self._logo_ref = None
         self._logo_label = None
         try:
-            _lp = os.path.join(_base, "assets", "icon.png")
-            if os.path.isfile(_lp):
+            _lp = self._icon_path("icon.png")
+            if _lp:
                 _img = tk.PhotoImage(file=_lp)
                 _k = max(1, round(max(_img.width(), _img.height()) / 52))
                 _img = _img.subsample(_k, _k)
@@ -352,10 +389,12 @@ class App:
         ctk.CTkLabel(prow, text="کلمات خاص:",
                      font=self._font(12)).pack(side="right", padx=4)
         self.prompt_var = tk.StringVar(value=self.cfg.get("prompt", ""))
-        ctk.CTkEntry(prow, textvariable=self.prompt_var, width=340,
-                     font=self._font(12), justify="right",
-                     placeholder_text="مثلا: WordLab, BrandX").pack(
-                         side="right", padx=4)
+        self.prompt_entry = ctk.CTkEntry(
+            prow, textvariable=self.prompt_var, width=340,
+            font=self._font(12), justify="right",
+            placeholder_text="مثلا: WordLab, BrandX")
+        self.prompt_entry.pack(side="right", padx=4)
+        self.prompt_var.trace_add("write", lambda *_: self._prompt_preview())
         ctk.CTkLabel(prow, text="خروجی:",
                      font=self._font(12)).pack(side="right", padx=(12, 4))
         self.out_var = tk.StringVar(value=self.cfg.get("outdir", ""))
@@ -364,19 +403,45 @@ class App:
                                                expand=True)
         ctk.CTkButton(prow, text="…", width=40, font=self._font(12),
                       command=self._pick_out).pack(side="right", padx=4)
+        # Echo of the prompt with BiDi isolates: what the user typed can
+        # look shuffled inside a plain Entry (numbers/Latin jump sides),
+        # so show the corrected rendering underneath while typing.
+        self.prompt_echo = ctk.CTkLabel(
+            st, text="", font=self._font(11), text_color="gray",
+            justify="right", wraplength=760)
+        self.prompt_echo.pack(anchor="e", padx=12, pady=(0, 2))
 
-        # live Premiere-style caption preview (black box, roll through cues)
+        # live Premiere-style caption preview: 16:9 video mock, captions
+        # docked at the bottom like a real player, with timing + autoplay.
         pv = ctk.CTkFrame(st, fg_color="transparent")
         pv.pack(fill="x", padx=8, pady=(2, 6))
-        ctk.CTkLabel(pv, text="پیش‌نمایش زنده:", font=self._font(11),
+        ctk.CTkLabel(pv, text="پیش‌نمایش زنده (مثل پریمیر):",
+                     font=self._font(11),
                      text_color="gray").pack(anchor="e", padx=4)
         self.pv_box = ctk.CTkFrame(pv, fg_color="black", corner_radius=8,
                                     border_color=SAFFRON, border_width=2)
         self.pv_box.pack(fill="x", padx=4, pady=2)
-        self.pv_text = ctk.CTkLabel(self.pv_box, text="",
-                                    font=(FONT_FAMILY, 15, "bold"),
-                                    text_color="white", justify="center")
-        self.pv_text.pack(padx=8, pady=10)
+        # fixed 16:9-ish stage so caption position matches a real video
+        self.pv_stage = ctk.CTkFrame(self.pv_box, fg_color="black",
+                                     height=190)
+        self.pv_stage.pack(fill="x", padx=6, pady=(6, 0))
+        self.pv_stage.pack_propagate(False)
+        ctk.CTkLabel(self.pv_stage, text="16:9",
+                     font=self._font(11), text_color="#666666").pack(
+                         anchor="ne", padx=8, pady=4)
+        self.pv_text = ctk.CTkLabel(self.pv_stage, text="",
+                                    font=(FONT_FAMILY, 16, "bold"),
+                                    text_color="#FFEB3B", justify="center",
+                                    wraplength=700)
+        self.pv_text.pack(side="bottom", padx=10, pady=10)
+        self.pv_time = ctk.CTkLabel(self.pv_box, text="",
+                                    font=self._font(11),
+                                    text_color="#BBBBBB", justify="center")
+        self.pv_time.pack(padx=8, pady=(0, 2))
+        self.pv_warn = ctk.CTkLabel(self.pv_box, text="",
+                                    font=self._font(11),
+                                    text_color="#F0B43C", justify="center")
+        self.pv_warn.pack(padx=8, pady=(0, 4))
         nav = ctk.CTkFrame(pv, fg_color="transparent")
         nav.pack(fill="x", padx=4)
         ctk.CTkButton(nav, text="کیو بعدی", width=90, font=self._font(12),
@@ -388,6 +453,11 @@ class App:
         ctk.CTkButton(nav, text="کیو قبلی", width=90, font=self._font(12),
                       fg_color="gray",
                       command=self._pv_prev).pack(side="left", padx=2)
+        self.pv_play_btn = ctk.CTkButton(
+            nav, text="▶ پخش خودکار", width=110, font=self._font(12),
+            fg_color=TEAL, hover_color=TEAL_HOVER,
+            command=self._pv_toggle_play)
+        self.pv_play_btn.pack(side="right", padx=2)
 
         # 4. run
         run = ctk.CTkFrame(r, fg_color=CARD)
@@ -427,6 +497,10 @@ class App:
         self._log("آماده. اول «اسکن سیستم» را ببین، بعد مدل را دانلود کن.")
         self._paint_seg()
         self._preview_rebuild()
+        try:
+            self._prompt_preview()
+        except Exception:  # noqa: BLE001
+            pass
 
     # ---------- theme ----------
     @staticmethod
@@ -590,8 +664,10 @@ class App:
     # ---------- caption style (Premiere-like) ----------
     SAMPLE_EN = ("Hello! This is a live preview, showing exactly how your "
                  "captions will roll on the video screen.")
-    SAMPLE_FA = ("سلام! این یک پیش‌نمایش زنده است، و دقیقاً نشان می‌دهد "
-                 "زیرنویس شما چطور روی صفحه ویدیو می‌آید.")
+    # Mixed FA + number + Latin on purpose: exercises the BiDi path
+    # (numbers/Latin must not jump sides in the preview or the SRT).
+    SAMPLE_FA = ("سلام! این پیش‌نمایش زنده قسمت 12 است و WordLab دقیقاً "
+                 "نشان می‌دهد زیرنویس شما چطور روی صفحه ویدیو می‌آید.")
 
     def _mode_name(self):
         return {1: "single", 2: "two", 3: "three"}[self.lines_n]
@@ -639,18 +715,13 @@ class App:
 
     def _preview_cues(self):
         from app import subtitles as subs
-        try:
-            max_words = max(1, min(6, int(self.words_var.get())))
-        except ValueError:
-            max_words = 3
-        try:
-            max_chars = max(20, min(50, int(self.chars_var.get())))
-        except ValueError:
-            max_chars = 32
-        try:
-            max_gap = max(0.1, float(self.gap_var.get() or 0.8))
-        except ValueError:
-            max_gap = 0.8
+        # Persian digits tolerated («۳» == 3, «۰٫۸» == 0.8)
+        max_words = bidi_helper.parse_int(self.words_var.get(), 3)
+        max_words = max(1, min(6, max_words))
+        max_chars = bidi_helper.parse_int(self.chars_var.get(), 32)
+        max_chars = max(20, min(50, max_chars))
+        max_gap = bidi_helper.parse_float(self.gap_var.get() or 0.8, 0.8)
+        max_gap = max(0.1, max_gap)
         lines = subs._split_lines(self._sample_words(), max_words,
                                   max_chars, max_gap)
         step = self.lines_n
@@ -663,13 +734,44 @@ class App:
         if not cues:
             self.pv_text.configure(text="…")
             self.pv_count.configure(text="")
+            try:
+                self.pv_time.configure(text="")
+                self.pv_warn.configure(text="")
+            except AttributeError:
+                pass
             return
         self.pv_idx %= len(cues)
         cue = cues[self.pv_idx]
+        lang = self.lang_var.get()
+        # Display layer only: isolates keep «12»/«WordLab» on the right
+        # side inside FA lines. File output stays logical (no controls).
         self.pv_text.configure(
-            text="\n".join(" ".join(w["word"] for w in ln) for ln in cue))
+            text=bidi_helper.display_cue(cue, lang),
+            justify="center" if lang != "fa" else "center")
         self.pv_count.configure(
             text="کیو %d از %d" % (self.pv_idx + 1, len(cues)))
+        try:
+            from app import subtitles as subs
+            first, last = cue[0][0], cue[-1][-1]
+            self.pv_time.configure(
+                text="%s --> %s  •  %d خط" % (
+                    subs.fmt(first["start"]), subs.fmt(last["end"]),
+                    len(cue)))
+            try:
+                _mc = bidi_helper.parse_int(self.chars_var.get(), 32)
+            except Exception:  # noqa: BLE001
+                _mc = 32
+            _long = [" ".join(w["word"] for w in ln)
+                     for ln in cue if len(" ".join(
+                         w["word"] for w in ln)) > _mc]
+            if _long:
+                self.pv_warn.configure(
+                    text="⚠ %d خط از سقف حروف (%d) بیشتر است" % (
+                        len(_long), _mc))
+            else:
+                self.pv_warn.configure(text="")
+        except AttributeError:
+            pass  # widgets not built yet (early _on_setting_change)
 
     def _pv_next(self):
         self.pv_idx += 1
@@ -678,6 +780,29 @@ class App:
     def _pv_prev(self):
         self.pv_idx -= 1
         self._preview_rebuild(reset=False)
+
+    def _pv_toggle_play(self):
+        self.pv_playing = not self.pv_playing
+        try:
+            self.pv_play_btn.configure(
+                text="⏸ توقف" if self.pv_playing else "▶ پخش خودکار")
+        except Exception:  # noqa: BLE001
+            pass
+        if self.pv_playing:
+            self._pv_tick()
+
+    def _pv_tick(self):
+        if not self.pv_playing:
+            return
+        try:
+            self.pv_idx += 1
+            self._preview_rebuild(reset=False)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self.root.after(1600, self._pv_tick)
+        except Exception:  # noqa: BLE001
+            self.pv_playing = False
 
     # ---------- model download ----------
     def _download_model(self):
@@ -794,22 +919,40 @@ class App:
                     and p not in self.lst.get(0, "end"):
                 self.lst.insert("end", p)
 
+    def _prompt_preview(self):
+        """Live BiDi-corrected echo of the prompt entry (typing helper)."""
+        try:
+            raw = self.prompt_var.get()
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            if raw and bidi_helper.contains_rtl(raw):
+                self.prompt_echo.configure(
+                    text="نمایش صحیح: " + bidi_helper.display(raw))
+            else:
+                self.prompt_echo.configure(text="")
+        except Exception:  # noqa: BLE001
+            pass
+
     # ---------- config ----------
     def _save_cfg(self):
-        try:
-            self.cfg.update({
-                "lang": self.lang_var.get(),
-                "model": self.model_var.get(),
-                "mode": self._mode_name(),
-                "words_per_line": int(self.words_var.get()),
-                "max_chars": int(self.chars_var.get()),
-                "max_gap": float(self.gap_var.get() or 0.8),
-                "hold": float(self.hold_var.get() or 1.0),
-                "prompt": self.prompt_var.get(),
-                "outdir": self.out_var.get(),
-            })
-        except ValueError:
-            pass
+        self.cfg.update({
+            "lang": self.lang_var.get(),
+            "model": self.model_var.get(),
+            "mode": self._mode_name(),
+            # Persian digits tolerated («۳» == 3)
+            "words_per_line": bidi_helper.parse_int(
+                self.words_var.get(),
+                self.cfg.get("words_per_line", 3)),
+            "max_chars": bidi_helper.parse_int(
+                self.chars_var.get(), self.cfg.get("max_chars", 32)),
+            "max_gap": bidi_helper.parse_float(
+                self.gap_var.get() or 0.8, self.cfg.get("max_gap", 0.8)),
+            "hold": bidi_helper.parse_float(
+                self.hold_var.get() or 1.0, self.cfg.get("hold", 1.0)),
+            "prompt": self.prompt_var.get(),
+            "outdir": self.out_var.get(),
+        })
         app_config.save(self.cfg)
 
     # ---------- run ----------
@@ -825,12 +968,18 @@ class App:
             messagebox.showwarning("ساب‌ساز", "پوشه ذخیره خروجی را انتخاب کن.")
             return
         try:
-            words = int(self.words_var.get())
-            max_chars = int(self.chars_var.get())
-            max_gap = float(self.gap_var.get() or 0.8)
-            hold = float(self.hold_var.get() or 1.0)
+            words = bidi_helper.parse_int(self.words_var.get(), None)
+            max_chars = bidi_helper.parse_int(self.chars_var.get(), None)
+            max_gap = bidi_helper.parse_float(
+                self.gap_var.get() or 0.8, None)
+            hold = bidi_helper.parse_float(self.hold_var.get() or 1.0, None)
+            if words is None or max_chars is None \
+                    or max_gap is None or hold is None:
+                raise ValueError("bad numeric setting")
         except ValueError:
-            messagebox.showwarning("ساب‌ساز", "تنظیمات عددی معتبر نیست.")
+            messagebox.showwarning(
+                "ساب‌ساز",
+                "تنظیمات عددی معتبر نیست. (ارقام فارسی هم قبول است: ۳، ۰٫۸)")
             return
         if not 1 <= words <= 6:
             messagebox.showwarning("ساب‌ساز", "کلمه/خط باید بین ۱ تا ۶ باشد.")

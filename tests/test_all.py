@@ -14,6 +14,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import config as app_config
+from app import bidi as bidi_helper
 from app import hardware
 from app import model_manager
 from app import normalize
@@ -207,6 +208,38 @@ class TestNormalize(unittest.TestCase):
 
     def test_fa_digits(self):
         self.assertIn("۱۲", normalize.fa_digits("12"))
+
+
+class TestBidi(unittest.TestCase):
+    def test_ltr_passthrough(self):
+        self.assertEqual(bidi_helper.display("Hello 123"), "Hello 123")
+
+    def test_fa_number_isolated(self):
+        out = bidi_helper.display("سلام 12 تست")
+        # Latin/number run wrapped so Tk keeps it LTR inside RTL
+        self.assertIn("٬12٭".replace("٬", "\u2066").replace("٭", "\u2069"),
+                      out)
+        self.assertTrue(out.startswith("\u2067") and out.endswith("\u2069"))
+
+    def test_fa_latin_isolated(self):
+        out = bidi_helper.display("سلام Hello تست")
+        self.assertIn("\u2066Hello\u2069", out)
+
+    def test_idempotent(self):
+        once = bidi_helper.display("سلام 12 تست")
+        self.assertEqual(bidi_helper.display(once), once)
+
+    def test_file_text_stays_logical(self):
+        # engine output must NOT contain isolates — display layer only
+        words = make_words("سلام 12 تست")
+        line = " ".join(w["word"] for w in words[:3])
+        self.assertNotIn("\u2066", line)
+        self.assertIn("\u2066", bidi_helper.display(line))
+
+    def test_persian_digits_parse(self):
+        self.assertEqual(bidi_helper.parse_int("۳", 0), 3)
+        self.assertAlmostEqual(bidi_helper.parse_float("۰٫۸", 0.0), 0.8)
+        self.assertEqual(bidi_helper.parse_int("bogus", 7), 7)
 
 
 class TestModelManager(unittest.TestCase):

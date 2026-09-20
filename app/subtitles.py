@@ -1,8 +1,9 @@
-"""SRT writer: word-by-word captions, single-line or Premiere-style 2-line.
+"""SRT writer: word-by-word captions, single/two/three lines per cue.
 
 Modes:
   single — each cue holds one line (classic short-form / TikTok style).
   two    — each cue holds up to 2 lines (Adobe Premiere style).
+  three  — each cue holds up to 3 lines (Premiere roll-up style).
 """
 import srtout as _legacy
 
@@ -58,13 +59,10 @@ def _split_lines(words, max_words=3, max_chars=32, max_gap=0.8):
 
 def build_srt(words, max_words=3, max_chars=32, max_gap=0.8, hold=1.0,
               mode="single"):
-    """Build SRT text. mode: 'single' (1 line/cue) or 'two' (<=2 lines/cue)."""
+    """Build SRT text. mode: 'single' (1 line/cue), 'two' (<=2), 'three' (<=3)."""
     lines = _split_lines(words, max_words, max_chars, max_gap)
-    if mode == "two":
-        # pack lines pairwise into cues (Premiere style)
-        cues = [lines[i:i + 2] for i in range(0, len(lines), 2)]
-    else:
-        cues = [[ln] for ln in lines]
+    step = {"single": 1, "two": 2, "three": 3}.get(mode, 1)
+    cues = [lines[i:i + step] for i in range(0, len(lines), step)]
     blocks = []
     for n, cue in enumerate(cues, 1):
         first, last = cue[0][0], cue[-1][-1]

@@ -43,8 +43,9 @@ def main():
     ap.add_argument("--lang", default="en", help="en, fa, or auto")
     ap.add_argument("--words", type=int, default=3,
                     help="words per line (default 3)")
-    ap.add_argument("--mode", default="single", choices=("single", "two"),
-                    help="single: 1 line/cue; two: Premiere-style 2 lines/cue")
+    ap.add_argument("--mode", default="single", choices=("single", "two", "three"),
+                    help="single: 1 line/cue; two: Premiere-style 2 lines/cue; "
+                         "three: roll-up 3 lines/cue")
     ap.add_argument("--max-chars", type=int, default=32,
                     help="max characters per line (default 32)")
     ap.add_argument("--max-gap", type=float, default=0.8,

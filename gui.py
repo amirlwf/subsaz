@@ -95,13 +95,14 @@ class App:
         self.cfg = app_config.load()
         self.root = root or ctk.CTk()
         self.root.title("ساب‌ساز — زیرنویس دقیق کلمه‌به‌کلمه")
-        self.root.geometry("860x760")
-        self.root.minsize(760, 680)
+        self.root.geometry("880x900")
+        self.root.minsize(780, 820)
         self.q = queue.Queue()
         self.running = False
         self.downloading = False
         self.profile = None
         self._cancel = threading.Event()
+        self.pv_idx = 0
         self._ensure_font()
         self._build()
         self.root.after(120, self._poll)
@@ -227,38 +228,60 @@ class App:
 
         ctk.CTkLabel(g, text="حالت:", font=self._font(12),
                      justify="right").grid(row=0, column=2, padx=4, sticky="e")
-        self.mode_var = tk.StringVar(value=self.cfg.get("mode", "single"))
-        ctk.CTkComboBox(g, variable=self.mode_var,
-                        values=("single", "two"), width=100,
-                        font=self._font(12),
-                        command=self._on_setting_change).grid(row=0, column=1,
-                                                              padx=4)
-        ctk.CTkLabel(g, text="(two = دوخطی پریمیر)",
+        # Premiere-style lines-per-cue segmented control (1 / 2 / 3 lines)
+        self.lines_n = {"single": 1, "two": 2, "three": 3}.get(
+            self.cfg.get("mode", "single"), 1)
+        segf = ctk.CTkFrame(g, fg_color="transparent")
+        segf.grid(row=0, column=0, columnspan=2, padx=4, sticky="w")
+        self.seg_btns = {}
+        for _n, _t in ((1, "۱ خط"), (2, "۲ خط"), (3, "۳ خط")):
+            _b = ctk.CTkButton(segf, text=_t, width=64, font=self._font(12),
+                               command=lambda n=_n: self._set_lines(n))
+            _b.pack(side="right", padx=2)
+            self.seg_btns[_n] = _b
+        ctk.CTkLabel(g, text="(مثل کپشن پریمیر)",
                      font=self._font(11), justify="right",
-                     text_color="gray").grid(row=0, column=0, padx=4,
-                                             sticky="e")
+                     text_color="gray").grid(row=1, column=0, columnspan=2,
+                                             padx=4, sticky="w")
 
-        ctk.CTkLabel(g, text="کلمه/خط:", font=self._font(12),
-                     justify="right").grid(row=1, column=3, padx=4, pady=4,
-                                           sticky="e")
+        # sliders: words/line + chars/line, synced into words_var/chars_var
+        # so the save/run paths below stay unchanged
         self.words_var = tk.StringVar(
             value=str(self.cfg.get("words_per_line", 3)))
-        ctk.CTkComboBox(g, variable=self.words_var,
-                        values=("1", "2", "3", "4", "5", "6"), width=80,
-                        font=self._font(12),
-                        command=self._on_setting_change).grid(row=1, column=2,
-                                                              padx=4, pady=4)
+        srow1 = ctk.CTkFrame(st, fg_color="transparent")
+        srow1.pack(fill="x", padx=8, pady=2)
+        ctk.CTkLabel(srow1, text="کلمه/خط:", font=self._font(12)).pack(
+            side="right", padx=4)
+        self.words_val = ctk.CTkLabel(srow1, text=self.words_var.get(),
+                                      font=self._font(12, True), width=28)
+        self.words_val.pack(side="left", padx=4)
+        self.words_slider = ctk.CTkSlider(srow1, from_=1, to=6,
+                                          number_of_steps=5,
+                                          command=self._on_words_slider)
+        self.words_slider.pack(side="right", padx=4, fill="x", expand=True)
+        try:
+            self.words_slider.set(max(1, min(6, int(self.words_var.get()))))
+        except ValueError:
+            self.words_slider.set(3)
 
-        ctk.CTkLabel(g, text="حروف/خط:", font=self._font(12),
-                     justify="right").grid(row=1, column=1, padx=4, pady=4,
-                                           sticky="e")
         self.chars_var = tk.StringVar(
             value=str(self.cfg.get("max_chars", 32)))
-        ctk.CTkComboBox(g, variable=self.chars_var,
-                        values=("20", "24", "28", "32", "36", "42", "50"),
-                        width=80, font=self._font(12),
-                        command=self._on_setting_change).grid(row=1, column=0,
-                                                              padx=4, pady=4)
+        srow2 = ctk.CTkFrame(st, fg_color="transparent")
+        srow2.pack(fill="x", padx=8, pady=2)
+        ctk.CTkLabel(srow2, text="حروف/خط:", font=self._font(12)).pack(
+            side="right", padx=4)
+        self.chars_val = ctk.CTkLabel(srow2, text=self.chars_var.get(),
+                                      font=self._font(12, True), width=28)
+        self.chars_val.pack(side="left", padx=4)
+        self.chars_slider = ctk.CTkSlider(srow2, from_=20, to=50,
+                                          number_of_steps=15,
+                                          command=self._on_chars_slider)
+        self.chars_slider.pack(side="right", padx=4, fill="x", expand=True)
+        try:
+            _cv = max(20, min(50, int(self.chars_var.get())))
+        except ValueError:
+            _cv = 32
+        self.chars_slider.set(_cv)
 
         ctk.CTkLabel(g, text="گپ (ثانیه):", font=self._font(12),
                      justify="right").grid(row=2, column=3, padx=4, pady=4,
@@ -293,6 +316,29 @@ class App:
         ctk.CTkButton(prow, text="…", width=40, font=self._font(12),
                       command=self._pick_out).pack(side="right", padx=4)
 
+        # live Premiere-style caption preview (black box, roll through cues)
+        pv = ctk.CTkFrame(st, fg_color="transparent")
+        pv.pack(fill="x", padx=8, pady=(2, 6))
+        ctk.CTkLabel(pv, text="پیش‌نمایش زنده:", font=self._font(11),
+                     text_color="gray").pack(anchor="e", padx=4)
+        self.pv_box = ctk.CTkFrame(pv, fg_color="black", corner_radius=8)
+        self.pv_box.pack(fill="x", padx=4, pady=2)
+        self.pv_text = ctk.CTkLabel(self.pv_box, text="",
+                                    font=(FONT_FAMILY, 15, "bold"),
+                                    text_color="white", justify="center")
+        self.pv_text.pack(padx=8, pady=10)
+        nav = ctk.CTkFrame(pv, fg_color="transparent")
+        nav.pack(fill="x", padx=4)
+        ctk.CTkButton(nav, text="کیو بعدی", width=90, font=self._font(12),
+                      fg_color="gray",
+                      command=self._pv_next).pack(side="left", padx=2)
+        self.pv_count = ctk.CTkLabel(nav, text="", font=self._font(11),
+                                     text_color="gray")
+        self.pv_count.pack(side="left", padx=6)
+        ctk.CTkButton(nav, text="کیو قبلی", width=90, font=self._font(12),
+                      fg_color="gray",
+                      command=self._pv_prev).pack(side="left", padx=2)
+
         # 4. run
         run = ctk.CTkFrame(r)
         run.pack(fill="x", padx=10, pady=4)
@@ -326,6 +372,8 @@ class App:
                                   font=self._font(12))
         self.log.pack(fill="both", expand=True, padx=8, pady=8)
         self._log("آماده. اول «اسکن سیستم» را ببین، بعد مدل را دانلود کن.")
+        self._paint_seg()
+        self._preview_rebuild()
 
     # ---------- theme ----------
     def _toggle_theme(self):
@@ -466,10 +514,106 @@ class App:
         self._refresh_rec()
 
     def _on_setting_change(self, _value=None):
-        # lang/mode/words/chars combos: persist immediately and keep the
-        # model recommendation in sync (lang affects the auto pick).
+        # lang combo: persist immediately, keep the model recommendation
+        # in sync (lang affects the auto pick) and rebuild the preview
+        # (sample text follows the language).
         self._save_cfg()
         self._refresh_rec()
+        try:
+            self._preview_rebuild()
+        except AttributeError:
+            pass  # preview widgets not built yet
+
+    # ---------- caption style (Premiere-like) ----------
+    SAMPLE_EN = ("Hello! This is a live preview, showing exactly how your "
+                 "captions will roll on the video screen.")
+    SAMPLE_FA = ("سلام! این یک پیش‌نمایش زنده است، و دقیقاً نشان می‌دهد "
+                 "زیرنویس شما چطور روی صفحه ویدیو می‌آید.")
+
+    def _mode_name(self):
+        return {1: "single", 2: "two", 3: "three"}[self.lines_n]
+
+    def _set_lines(self, n):
+        self.lines_n = n
+        self._paint_seg()
+        self._save_cfg()
+        self._preview_rebuild()
+
+    def _paint_seg(self):
+        for n, b in self.seg_btns.items():
+            try:
+                if n == self.lines_n:
+                    b.configure(fg_color="#1f6feb", text_color="white")
+                else:
+                    b.configure(fg_color="#4a4a4a", text_color="#ddd")
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _on_words_slider(self, v):
+        w = max(1, min(6, int(round(float(v)))))
+        self.words_var.set(str(w))
+        self.words_val.configure(text=str(w))
+        self._save_cfg()
+        self._preview_rebuild()
+
+    def _on_chars_slider(self, v):
+        c = max(20, min(50, int(round(float(v) / 2.0)) * 2))
+        self.chars_var.set(str(c))
+        self.chars_val.configure(text=str(c))
+        self._save_cfg()
+        self._preview_rebuild()
+
+    def _sample_words(self):
+        text = self.SAMPLE_FA if self.lang_var.get() == "fa" \
+            else self.SAMPLE_EN
+        words, t = [], 0.0
+        for w in text.split():
+            words.append({"word": w, "start": round(t, 2),
+                          "end": round(t + 0.24, 2)})
+            t += 0.30
+        return words
+
+    def _preview_cues(self):
+        from app import subtitles as subs
+        try:
+            max_words = max(1, min(6, int(self.words_var.get())))
+        except ValueError:
+            max_words = 3
+        try:
+            max_chars = max(20, min(50, int(self.chars_var.get())))
+        except ValueError:
+            max_chars = 32
+        try:
+            max_gap = max(0.1, float(self.gap_var.get() or 0.8))
+        except ValueError:
+            max_gap = 0.8
+        lines = subs._split_lines(self._sample_words(), max_words,
+                                  max_chars, max_gap)
+        step = self.lines_n
+        return [lines[i:i + step] for i in range(0, len(lines), step)]
+
+    def _preview_rebuild(self, reset=True):
+        if reset:
+            self.pv_idx = 0
+        cues = self._preview_cues()
+        if not cues:
+            self.pv_text.configure(text="…")
+            self.pv_count.configure(text="")
+            return
+        self.pv_idx %= len(cues)
+        cue = cues[self.pv_idx]
+        self.pv_text.configure(
+            text="\n".join(" ".join(w["word"] for w in ln) for ln in cue))
+        self.pv_count.configure(
+            text="کیو %d از %d" % (self.pv_idx + 1, len(cues)))
+
+    def _pv_next(self):
+        self.pv_idx += 1
+        self._preview_rebuild(reset=False)
+
+    def _pv_prev(self):
+        self.pv_idx -= 1
+        self._preview_rebuild(reset=False)
 
     # ---------- model download ----------
     def _download_model(self):
@@ -592,7 +736,7 @@ class App:
             self.cfg.update({
                 "lang": self.lang_var.get(),
                 "model": self.model_var.get(),
-                "mode": self.mode_var.get(),
+                "mode": self._mode_name(),
                 "words_per_line": int(self.words_var.get()),
                 "max_chars": int(self.chars_var.get()),
                 "max_gap": float(self.gap_var.get() or 0.8),
@@ -652,7 +796,7 @@ class App:
         self.q.put(("prog_start", None))
         args = dict(outdir=outdir, lang=lang, model=model, words=words,
                     max_chars=max_chars, max_gap=max_gap, hold=hold,
-                    mode=self.mode_var.get(),
+                    mode=self._mode_name(),
                     prompt=self.prompt_var.get() or None,
                     profile=self.profile)
         threading.Thread(target=self._worker, args=(files, args),

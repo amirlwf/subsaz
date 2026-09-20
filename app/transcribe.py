@@ -1,17 +1,17 @@
 """Transcription pipeline: media -> word-timed SRT.
 
-Wraps the proven asr.py engine with:
+Self-contained engine with:
 - bundled ffmpeg/ffprobe (assets/bin) or system fallback,
 - hardware-driven device / compute_type / threads,
-- new subtitle styles (single / two-line, max chars),
+- subtitle styles (single / two / three lines, max chars),
 - model auto-download check with a clear Persian error.
 """
 import os
 import sys
 import time
 
-import normalize
-import smart
+from . import normalize
+from . import smart
 from app import hardware, model_manager
 from app import subtitles
 

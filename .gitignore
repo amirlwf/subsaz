@@ -29,6 +29,9 @@ subsaz_tmp/
 *.wav
 *.srt
 
+# maintainer-only docs (release guides, personal checklists) — never committed
+docs/
+
 # sample media (do not commit large binaries)
 *.mp4
 *.mkv

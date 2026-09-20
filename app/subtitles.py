@@ -5,7 +5,7 @@ Modes:
   two    — each cue holds up to 2 lines (Adobe Premiere style).
   three  — each cue holds up to 3 lines (Premiere roll-up style).
 """
-import srtout as _legacy
+from . import srtout as _legacy
 
 HARD = _legacy.HARD
 SOFT = _legacy.SOFT

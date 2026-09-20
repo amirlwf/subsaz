@@ -7,7 +7,7 @@ APP_NAME = "SubSaz"
 DEFAULTS = {
     "lang": "en",
     "model": "auto",          # auto | tiny | base | small | medium | large-v3-turbo
-    "mode": "single",         # single (1 line) | two (Premiere-style 2 lines)
+    "mode": "single",         # single (1 line) | two (Premiere 2 lines) | three (roll-up 3)
     "words_per_line": 3,
     "max_chars": 32,
     "max_gap": 0.8,

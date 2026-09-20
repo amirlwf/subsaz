@@ -88,6 +88,19 @@ MODELS = ("auto", "large-v3-turbo", "medium", "small", "base", "tiny")
 MODEL_MB = {"auto": 0, "large-v3-turbo": 1600, "medium": 1500,
             "small": 460, "base": 145, "tiny": 75}
 
+# ---- Iranian palette: firoozeh / lajvard / saffron / pomegranate ----
+TEAL = "#15919B"          # firoozeh — primary actions
+TEAL_HOVER = "#0E6E76"
+TEAL_TEXT = ("#0E6E76", "#5AD6DE")     # headings in light/dark mode
+SAFFRON = "#D98E1B"       # zafaran — active segment, preview frame
+SAFFRON_TEXT = ("#9C6B0F", "#F0B43C")  # section titles
+BORDO = "#A93226"         # anari — cancel/danger
+BORDO_HOVER = "#7B241C"
+SEG_OFF = ("#D8D8D8", "#4A4A4A")
+SEG_OFF_TEXT = ("#333333", "#DDDDDD")
+CARD = ("#FFFFFF", "#262626")          # section cards
+ROOT_BG = ("#F4EEE1", "#1B1B1B")       # parchment / warm dark
+
 
 class App:
     def __init__(self, root=None):
@@ -97,6 +110,10 @@ class App:
         self.root.title("ساب‌ساز — زیرنویس دقیق کلمه‌به‌کلمه")
         self.root.geometry("880x900")
         self.root.minsize(780, 820)
+        try:
+            self.root.configure(fg_color=ROOT_BG)
+        except Exception:  # noqa: BLE001
+            pass
         self.q = queue.Queue()
         self.running = False
         self.downloading = False
@@ -134,11 +151,29 @@ class App:
     def _build(self):
         r = self.root
 
-        head = ctk.CTkFrame(r)
+        head = ctk.CTkFrame(r, fg_color=CARD)
         head.pack(fill="x", padx=10, pady=(10, 4))
+        # in-app logo (assets/icon.png), text-only fallback.
+        # Plain tk.Label (not CTkLabel): no PIL/CTkImage dependency, and no
+        # HighDPI-scaling warning — bg is synced to the card in both modes.
+        self._logo_ref = None
+        self._logo_label = None
+        try:
+            _lp = os.path.join(_base, "assets", "icon.png")
+            if os.path.isfile(_lp):
+                _img = tk.PhotoImage(file=_lp)
+                _k = max(1, round(max(_img.width(), _img.height()) / 52))
+                _img = _img.subsample(_k, _k)
+                self._logo_ref = _img
+                self._logo_label = tk.Label(
+                    head, image=_img, bg=self._card_bg(), borderwidth=0,
+                    highlightthickness=0)
+                self._logo_label.pack(side="right", padx=(12, 0), pady=8)
+        except Exception:  # noqa: BLE001
+            _bc("logo load failed")
         # RTL: primary content from the right
-        ctk.CTkLabel(head, text="ساب‌ساز",
-                     font=self._font(20, True)).pack(side="right", padx=12,
+        ctk.CTkLabel(head, text="ساب‌ساز", text_color=TEAL_TEXT,
+                     font=self._font(22, True)).pack(side="right", padx=12,
                                                     pady=8)
         ctk.CTkLabel(
             head, text="ویدیو یا صوت بده، فایل SRT دقیق بگیر",
@@ -149,16 +184,19 @@ class App:
         self.theme_btn.pack(side="left", padx=12)
 
         # 1. files
-        files = ctk.CTkFrame(r)
+        files = ctk.CTkFrame(r, fg_color=CARD)
         files.pack(fill="x", padx=10, pady=4)
         ctk.CTkLabel(files, text="۱. فایل‌ها (ویدیو یا صوت)",
+                     text_color=SAFFRON_TEXT,
                      font=self._font(13, True)).pack(anchor="e", padx=12,
                                                     pady=(8, 0))
         brow = ctk.CTkFrame(files, fg_color="transparent")
         brow.pack(fill="x", padx=8, pady=4)
         ctk.CTkButton(brow, text="+ فایل‌ها", font=self._font(12),
+                      fg_color=TEAL, hover_color=TEAL_HOVER,
                       command=self._pick_files).pack(side="right", padx=4)
         ctk.CTkButton(brow, text="+ پوشه", font=self._font(12),
+                      fg_color=TEAL, hover_color=TEAL_HOVER,
                       command=self._pick_folder).pack(side="right", padx=4)
         ctk.CTkButton(brow, text="پاک کردن", font=self._font(12),
                       fg_color="gray", command=self._clear).pack(side="right",
@@ -166,7 +204,8 @@ class App:
         self.lst = tk.Listbox(files, height=5, activestyle="dotbox",
                               font=(FONT_FAMILY, 11),
                               bg="#2b2b2b", fg="#eee",
-                              selectbackground="#1f6feb")
+                              selectbackground=TEAL,
+                              selectforeground="#fff")
         self.lst.pack(fill="x", padx=12, pady=(0, 8))
         self._dnd_hook()
         ctk.CTkLabel(files, text="فرمت‌ها: mp4 mov mkv webm … + mp3 wav m4a aac flac ogg opus wma",
@@ -175,9 +214,10 @@ class App:
                                                                   pady=(0, 8))
 
         # 2. system & model
-        hw = ctk.CTkFrame(r)
+        hw = ctk.CTkFrame(r, fg_color=CARD)
         hw.pack(fill="x", padx=10, pady=4)
         ctk.CTkLabel(hw, text="۲. سیستم و مدل",
+                     text_color=SAFFRON_TEXT,
                      font=self._font(13, True)).pack(anchor="e", padx=12,
                                                     pady=(8, 0))
         self.hw_label = ctk.CTkLabel(hw, text="در حال اسکن سیستم…",
@@ -199,19 +239,22 @@ class App:
         self.model_box.pack(side="right", padx=4)
         self.dl_btn = ctk.CTkButton(mrow, text="⬇ دانلود مدل",
                                     font=self._font(12),
+                                    fg_color=TEAL, hover_color=TEAL_HOVER,
                                     command=self._download_model)
         self.dl_btn.pack(side="right", padx=4)
         ctk.CTkButton(mrow, text="🔄 اسکن مجدد", font=self._font(12),
                       fg_color="gray",
                       command=self._rescan).pack(side="right", padx=4)
-        self.dl_prog = ctk.CTkProgressBar(mrow, width=160)
+        self.dl_prog = ctk.CTkProgressBar(mrow, width=160,
+                                          progress_color=TEAL)
         self.dl_prog.pack(side="left", padx=8)
         self.dl_prog.set(0)
 
         # 3. subtitle settings
-        st = ctk.CTkFrame(r)
+        st = ctk.CTkFrame(r, fg_color=CARD)
         st.pack(fill="x", padx=10, pady=4)
         ctk.CTkLabel(st, text="۳. تنظیمات زیرنویس",
+                     text_color=SAFFRON_TEXT,
                      font=self._font(13, True)).pack(anchor="e", padx=12,
                                                     pady=(8, 0))
         g = ctk.CTkFrame(st, fg_color="transparent")
@@ -257,6 +300,9 @@ class App:
         self.words_val.pack(side="left", padx=4)
         self.words_slider = ctk.CTkSlider(srow1, from_=1, to=6,
                                           number_of_steps=5,
+                                          progress_color=TEAL,
+                                          button_color=TEAL,
+                                          button_hover_color=TEAL_HOVER,
                                           command=self._on_words_slider)
         self.words_slider.pack(side="right", padx=4, fill="x", expand=True)
         try:
@@ -275,6 +321,9 @@ class App:
         self.chars_val.pack(side="left", padx=4)
         self.chars_slider = ctk.CTkSlider(srow2, from_=20, to=50,
                                           number_of_steps=15,
+                                          progress_color=TEAL,
+                                          button_color=TEAL,
+                                          button_hover_color=TEAL_HOVER,
                                           command=self._on_chars_slider)
         self.chars_slider.pack(side="right", padx=4, fill="x", expand=True)
         try:
@@ -321,7 +370,8 @@ class App:
         pv.pack(fill="x", padx=8, pady=(2, 6))
         ctk.CTkLabel(pv, text="پیش‌نمایش زنده:", font=self._font(11),
                      text_color="gray").pack(anchor="e", padx=4)
-        self.pv_box = ctk.CTkFrame(pv, fg_color="black", corner_radius=8)
+        self.pv_box = ctk.CTkFrame(pv, fg_color="black", corner_radius=8,
+                                    border_color=SAFFRON, border_width=2)
         self.pv_box.pack(fill="x", padx=4, pady=2)
         self.pv_text = ctk.CTkLabel(self.pv_box, text="",
                                     font=(FONT_FAMILY, 15, "bold"),
@@ -340,15 +390,16 @@ class App:
                       command=self._pv_prev).pack(side="left", padx=2)
 
         # 4. run
-        run = ctk.CTkFrame(r)
+        run = ctk.CTkFrame(r, fg_color=CARD)
         run.pack(fill="x", padx=10, pady=4)
         self.btn = ctk.CTkButton(run, text="▶  ساخت زیرنویس (SRT)",
                                  font=self._font(14, True),
+                                 fg_color=TEAL, hover_color=TEAL_HOVER,
                                  command=self._start)
         self.btn.pack(side="right", padx=8, pady=8)
         self.cancel_btn = ctk.CTkButton(run, text="■ لغو", width=80,
-                                        fg_color="#8b1a1a",
-                                        hover_color="#a52a2a",
+                                        fg_color=BORDO,
+                                        hover_color=BORDO_HOVER,
                                         font=self._font(12),
                                         state="disabled",
                                         command=self._cancel_run)
@@ -358,14 +409,16 @@ class App:
                       command=self._open_out).pack(side="right", padx=4)
         self.status = ctk.CTkLabel(run, text="", font=self._font(12))
         self.status.pack(side="left", padx=8)
-        self.prog = ctk.CTkProgressBar(run, width=140)
+        self.prog = ctk.CTkProgressBar(run, width=140,
+                                        progress_color=TEAL)
         self.prog.pack(side="left", padx=4)
         self.prog.set(0)
 
         # log
-        logf = ctk.CTkFrame(r)
+        logf = ctk.CTkFrame(r, fg_color=CARD)
         logf.pack(fill="both", expand=True, padx=10, pady=(4, 10))
         ctk.CTkLabel(logf, text="گزارش",
+                     text_color=SAFFRON_TEXT,
                      font=self._font(13, True)).pack(anchor="e", padx=12,
                                                     pady=(6, 0))
         self.log = ctk.CTkTextbox(logf, height=110,
@@ -376,18 +429,28 @@ class App:
         self._preview_rebuild()
 
     # ---------- theme ----------
+    @staticmethod
+    def _card_bg():
+        return "#FFFFFF" if ctk.get_appearance_mode() == "Light" \
+            else "#262626"
+
     def _toggle_theme(self):
         mode = "light" if ctk.get_appearance_mode() == "Dark" else "dark"
         ctk.set_appearance_mode(mode)
+        if self._logo_label is not None:
+            try:
+                self._logo_label.configure(bg=self._card_bg())
+            except Exception:  # noqa: BLE001
+                pass
         # plain-tk Listbox doesn't follow CTk theme — sync it manually
         try:
             if mode == "light":
                 self.lst.configure(bg="#f0f0f0", fg="#111",
-                                   selectbackground="#1f6feb",
+                                   selectbackground=TEAL,
                                    selectforeground="#fff")
             else:
                 self.lst.configure(bg="#2b2b2b", fg="#eee",
-                                   selectbackground="#1f6feb",
+                                   selectbackground=TEAL,
                                    selectforeground="#fff")
         except Exception:  # noqa: BLE001
             pass
@@ -543,9 +606,10 @@ class App:
         for n, b in self.seg_btns.items():
             try:
                 if n == self.lines_n:
-                    b.configure(fg_color="#1f6feb", text_color="white")
+                    b.configure(fg_color=SAFFRON, hover_color=SAFFRON,
+                                text_color="#1A1A1A")
                 else:
-                    b.configure(fg_color="#4a4a4a", text_color="#ddd")
+                    b.configure(fg_color=SEG_OFF, text_color=SEG_OFF_TEXT)
             except Exception:  # noqa: BLE001
                 pass
 

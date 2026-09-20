@@ -2,7 +2,7 @@
 ; Requires: Inno Setup 6 (https://jrsoftware.org/isinfo.php)
 ; Build first: pyinstaller subsaz-gui.spec  -> dist\SubSaz\
 #define MyAppName "SubSaz"
-#define MyAppVersion "0.0.1"
+#define MyAppVersion "0.0.2"
 #define MyAppPublisher "SubSaz"
 #define MyAppExeName "SubSaz.exe"
 

@@ -23,7 +23,6 @@ From the [Releases](https://github.com/amirlwf/subsaz/releases) page:
 |---|---|
 | `SubSaz-Setup-x.y.z.exe` | Windows installer (Start-menu + desktop shortcut, uninstaller) |
 | `SubSaz-portable-win64.zip` | Portable — unzip and run `SubSaz.exe`, no install |
-| `logo/*.png` | SubSaz logo artwork |
 
 > 🇮🇷 If a model download fails, connect to a VPN and retry — model weights
 > are hosted on HuggingFace, which is sanctioned. The app tells you this itself.

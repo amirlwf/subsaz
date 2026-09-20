@@ -30,7 +30,6 @@
 |---|---|
 | `SubSaz-Setup-x.y.z.exe` | نصاب ویندوز / Windows installer |
 | `SubSaz-portable-win64.zip` | نسخه پرتابل، بدون نصب / Portable, no install |
-| `logo/*.png` | لوگوی ساب‌ساز / SubSaz logo |
 
 > 🇮🇷 اگر دانلود مدل ناموفق بود، با VPN دوباره تلاش کن — مدل‌ها روی HuggingFace هستند که تحریم است.
 > If a model download fails, retry with a VPN — model weights are hosted on HuggingFace.

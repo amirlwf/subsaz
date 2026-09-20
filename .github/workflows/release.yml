@@ -54,4 +54,3 @@ jobs:
           files: |
             SubSaz-portable-win64.zip
             release/SubSaz-Setup-*.exe
-            logo/*.png

@@ -2,6 +2,7 @@
 import ctypes
 import os
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -220,15 +221,18 @@ class App:
                      justify="right").grid(row=0, column=4, padx=4, sticky="e")
         self.lang_var = tk.StringVar(value=self.cfg.get("lang", "en"))
         ctk.CTkComboBox(g, variable=self.lang_var, values=("en", "fa"),
-                        width=80, font=self._font(12)).grid(row=0, column=3,
-                                                            padx=4)
+                        width=80, font=self._font(12),
+                        command=self._on_setting_change).grid(
+                            row=0, column=3, padx=4)
 
         ctk.CTkLabel(g, text="حالت:", font=self._font(12),
                      justify="right").grid(row=0, column=2, padx=4, sticky="e")
         self.mode_var = tk.StringVar(value=self.cfg.get("mode", "single"))
         ctk.CTkComboBox(g, variable=self.mode_var,
                         values=("single", "two"), width=100,
-                        font=self._font(12)).grid(row=0, column=1, padx=4)
+                        font=self._font(12),
+                        command=self._on_setting_change).grid(row=0, column=1,
+                                                              padx=4)
         ctk.CTkLabel(g, text="(two = دوخطی پریمیر)",
                      font=self._font(11), justify="right",
                      text_color="gray").grid(row=0, column=0, padx=4,
@@ -241,8 +245,9 @@ class App:
             value=str(self.cfg.get("words_per_line", 3)))
         ctk.CTkComboBox(g, variable=self.words_var,
                         values=("1", "2", "3", "4", "5", "6"), width=80,
-                        font=self._font(12)).grid(row=1, column=2, padx=4,
-                                                  pady=4)
+                        font=self._font(12),
+                        command=self._on_setting_change).grid(row=1, column=2,
+                                                              padx=4, pady=4)
 
         ctk.CTkLabel(g, text="حروف/خط:", font=self._font(12),
                      justify="right").grid(row=1, column=1, padx=4, pady=4,
@@ -251,8 +256,9 @@ class App:
             value=str(self.cfg.get("max_chars", 32)))
         ctk.CTkComboBox(g, variable=self.chars_var,
                         values=("20", "24", "28", "32", "36", "42", "50"),
-                        width=80, font=self._font(12)).grid(row=1, column=0,
-                                                            padx=4, pady=4)
+                        width=80, font=self._font(12),
+                        command=self._on_setting_change).grid(row=1, column=0,
+                                                              padx=4, pady=4)
 
         ctk.CTkLabel(g, text="گپ (ثانیه):", font=self._font(12),
                      justify="right").grid(row=2, column=3, padx=4, pady=4,
@@ -325,6 +331,18 @@ class App:
     def _toggle_theme(self):
         mode = "light" if ctk.get_appearance_mode() == "Dark" else "dark"
         ctk.set_appearance_mode(mode)
+        # plain-tk Listbox doesn't follow CTk theme — sync it manually
+        try:
+            if mode == "light":
+                self.lst.configure(bg="#f0f0f0", fg="#111",
+                                   selectbackground="#1f6feb",
+                                   selectforeground="#fff")
+            else:
+                self.lst.configure(bg="#2b2b2b", fg="#eee",
+                                   selectbackground="#1f6feb",
+                                   selectforeground="#fff")
+        except Exception:  # noqa: BLE001
+            pass
 
     # ---------- log / poll ----------
     def _log(self, msg):
@@ -332,45 +350,61 @@ class App:
         self.log.see("end")
 
     def _poll(self):
+        # NOTE: after() is rescheduled in finally — a single bad message
+        # must never kill the whole UI update loop.
         try:
             while True:
-                kind, data = self.q.get_nowait()
-                if kind == "log":
-                    self._log(data)
-                elif kind == "status":
-                    self.status.configure(text=data)
-                elif kind == "dl_prog":
-                    self.dl_prog.set(data)
-                elif kind == "prog":
-                    # determinate overall batch progress 0..1
-                    try:
-                        self.prog.configure(mode="determinate")
-                        self.prog.set(float(data))
-                    except Exception:  # noqa: BLE001
-                        pass
-                elif kind == "prog_start":
-                    self.prog.configure(mode="determinate")
-                    self.prog.set(0)
-                elif kind == "prog_stop":
-                    try:
-                        self.prog.stop()
-                    except Exception:  # noqa: BLE001
-                        pass
-                    self.prog.set(1)
-                elif kind == "hw":
-                    self._show_hw(data)
-                elif kind == "dl_done":
-                    self.downloading = False
-                    self.dl_btn.configure(state="normal")
-                    self.dl_prog.set(1)
-                    self._refresh_rec()
-                elif kind == "done":
-                    self.running = False
-                    self.btn.configure(state="normal")
-                    self.cancel_btn.configure(state="disabled")
-        except queue.Empty:
-            pass
-        self.root.after(120, self._poll)
+                try:
+                    kind, data = self.q.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    self._handle_q(kind, data)
+                except Exception:  # noqa: BLE001
+                    _bc("poll handler failed: "
+                        + repr(traceback.format_exc()[-500:]))
+        finally:
+            self.root.after(120, self._poll)
+
+    def _handle_q(self, kind, data):
+        if kind == "log":
+            self._log(data)
+        elif kind == "warn":
+            # shown here (main thread) — tkinter dialogs are NOT
+            # thread-safe, workers must queue warnings, not show them.
+            title, msg = data
+            try:
+                messagebox.showwarning(title, msg)
+            except Exception:  # noqa: BLE001
+                self._log("⚠ %s" % msg)
+        elif kind == "status":
+            self.status.configure(text=data)
+        elif kind == "dl_prog":
+            self.dl_prog.set(data)
+        elif kind == "prog":
+            # determinate overall batch progress 0..1
+            self.prog.configure(mode="determinate")
+            self.prog.set(float(data))
+        elif kind == "prog_start":
+            self.prog.configure(mode="determinate")
+            self.prog.set(0)
+        elif kind == "prog_stop":
+            try:
+                self.prog.stop()
+            except Exception:  # noqa: BLE001
+                pass
+            self.prog.set(1)
+        elif kind == "hw":
+            self._show_hw(data)
+        elif kind == "dl_done":
+            self.downloading = False
+            self.dl_btn.configure(state="normal")
+            self.dl_prog.set(1)
+            self._refresh_rec()
+        elif kind == "done":
+            self.running = False
+            self.btn.configure(state="normal")
+            self.cancel_btn.configure(state="disabled")
 
     # ---------- hardware ----------
     def _scan_hw(self):
@@ -390,15 +424,29 @@ class App:
 
     def _rec_for(self, model, lang):
         if model == "auto":
-            rec = hardware.recommend(lang, self.profile or
-                                     hardware.classify())
+            if self.profile is None:
+                # scan still running — never block the UI thread with
+                # classify() here (wmic/nvidia-smi can take seconds).
+                return None, None
+            rec = hardware.recommend(lang, self.profile)
             return rec["model"], rec
         return model, None
+
+    def _need_profile(self):
+        """True when the hardware scan hasn't finished yet."""
+        if self.profile is None:
+            messagebox.showwarning(
+                "ساب‌ساز", "اسکن سیستم هنوز تمام نشده — یک لحظه صبر کن.")
+            return True
+        return False
 
     def _refresh_rec(self):
         lang = self.lang_var.get()
         model = self.model_var.get()
         name, rec = self._rec_for(model, lang)
+        if name is None:
+            self.rec_label.configure(text="در حال اسکن سیستم…")
+            return
         if rec:
             extra = " — %s" % rec["reason_fa"] if rec.get("reason_fa") else ""
             self.rec_label.configure(
@@ -417,12 +465,21 @@ class App:
         self._save_cfg()
         self._refresh_rec()
 
+    def _on_setting_change(self, _value=None):
+        # lang/mode/words/chars combos: persist immediately and keep the
+        # model recommendation in sync (lang affects the auto pick).
+        self._save_cfg()
+        self._refresh_rec()
+
     # ---------- model download ----------
     def _download_model(self):
         if self.downloading:
             return
         lang = self.lang_var.get()
         name, _rec = self._rec_for(self.model_var.get(), lang)
+        if name is None:
+            self._need_profile()
+            return
         if model_manager.is_cached(name):
             messagebox.showinfo("ساب‌ساز", "مدل %s قبلا دانلود شده." % name)
             return
@@ -450,11 +507,9 @@ class App:
             if e.need_vpn:
                 q.put(("log", "✗ " + model_manager.VPN_MESSAGE_FA.replace(
                     "\n", " ")))
-                try:
-                    messagebox.showwarning("ساب‌ساز — خطای دانلود",
-                                           model_manager.VPN_MESSAGE_FA)
-                except Exception:  # noqa: BLE001
-                    pass
+                # main thread shows the dialog (tkinter isn't thread-safe)
+                q.put(("warn", ("ساب‌ساز — خطای دانلود",
+                                model_manager.VPN_MESSAGE_FA)))
             else:
                 q.put(("log", "✗ دانلود ناموفق: %s" % e))
         except Exception as e:  # noqa: BLE001
@@ -497,7 +552,16 @@ class App:
     def _open_out(self):
         d = self.out_var.get()
         if d and os.path.isdir(d):
-            os.startfile(d)
+            try:
+                if hasattr(os, "startfile"):
+                    os.startfile(d)
+                elif sys.platform == "darwin":
+                    subprocess.run(["open", d], check=False)
+                else:
+                    subprocess.run(["xdg-open", d], check=False)
+            except Exception as e:  # noqa: BLE001
+                messagebox.showwarning(
+                    "ساب‌ساز", "باز کردن پوشه ناموفق بود: %s" % e)
 
     def _dnd_hook(self):
         # Real drag&drop on a plain CTk root: load tkdnd into this
@@ -560,9 +624,21 @@ class App:
         except ValueError:
             messagebox.showwarning("ساب‌ساز", "تنظیمات عددی معتبر نیست.")
             return
+        if not 1 <= words <= 6:
+            messagebox.showwarning("ساب‌ساز", "کلمه/خط باید بین ۱ تا ۶ باشد.")
+            return
+        if not 20 <= max_chars <= 50:
+            messagebox.showwarning("ساب‌ساز", "حروف/خط باید بین ۲۰ تا ۵۰ باشد.")
+            return
+        if max_gap <= 0 or hold < 0:
+            messagebox.showwarning("ساب‌ساز", "گپ باید مثبت و مکث نامنفی باشد.")
+            return
         lang = self.lang_var.get()
         model = self.model_var.get()
         name, _rec = self._rec_for(model, lang)
+        if name is None:
+            self._need_profile()
+            return
         if not model_manager.is_cached(name):
             messagebox.showwarning(
                 "ساب‌ساز",
@@ -626,12 +702,9 @@ class App:
             except model_manager.ModelDownloadError as e:
                 q.put(("log", "   FAILED: %s" % e))
                 if e.need_vpn:
-                    try:
-                        messagebox.showwarning(
-                            "ساب‌ساز — خطای دانلود",
-                            model_manager.VPN_MESSAGE_FA)
-                    except Exception:  # noqa: BLE001
-                        pass
+                    # main thread shows the dialog (tkinter isn't thread-safe)
+                    q.put(("warn", ("ساب‌ساز — خطای دانلود",
+                                    model_manager.VPN_MESSAGE_FA)))
             except Exception as e:  # noqa: BLE001
                 q.put(("log", "   FAILED: %s" % e))
                 _bc("worker failed: " + repr(traceback.format_exc()))

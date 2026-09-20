@@ -21,6 +21,16 @@ AUD_EXTS = (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma")
 ALL_EXTS = VID_EXTS + AUD_EXTS
 
 
+class CancelledError(Exception):
+    """Raised when the user cancels a batch run via cancel_event."""
+    pass
+
+
+def _check_cancel(cancel_event):
+    if cancel_event is not None and cancel_event.is_set():
+        raise CancelledError("لغو شد توسط کاربر.")
+
+
 def _base_dir():
     if getattr(sys, "frozen", False):
         meipass = getattr(sys, "_MEIPASS", None)
@@ -135,8 +145,22 @@ def resolve_model(lang, model, profile=None):
 
 def process_file(path, outdir, lang="en", model="auto", words=3, max_chars=32,
                  max_gap=0.8, hold=1.0, mode="single", prompt=None,
-                 profile=None, log=print):
-    """Transcribe one media file -> SRT. Returns result dict or None."""
+                 profile=None, log=print, progress_cb=None,
+                 cancel_event=None):
+    """Transcribe one media file -> SRT. Returns result dict or None.
+
+    progress_cb(stage) is called with 'audio' / 'transcribe' / 'subtitle'
+    so batch UIs can show per-file progress. cancel_event (threading.Event)
+    aborts between stages with CancelledError.
+    """
+    def _prog(stage):
+        if progress_cb is not None:
+            try:
+                progress_cb(stage)
+            except Exception:  # noqa: BLE001 — progress must never break run
+                pass
+
+    _check_cancel(cancel_event)
     if model != "auto" and not model_manager.is_cached(model):
         raise model_manager.ModelDownloadError(
             "مدل %s دانلود نشده. از بخش «مدل و سیستم» دانلودش کن." % model,
@@ -150,6 +174,8 @@ def process_file(path, outdir, lang="en", model="auto", words=3, max_chars=32,
     td = os.path.join(os.environ.get("TEMP", "."), "subsaz_tmp")
     os.makedirs(td, exist_ok=True)
     wav = os.path.join(td, "%d_%s.wav" % (os.getpid(), base[:80]))
+    _prog("audio")
+    _check_cancel(cancel_event)
     extract_audio(path, wav)
 
     name, device, compute, threads, notes = resolve_model(
@@ -181,6 +207,8 @@ def process_file(path, outdir, lang="en", model="auto", words=3, max_chars=32,
         if prof["tier"] in (
                 "GPU_STRONG", "GPU_MID", "CPU_STRONG"):
             start = name
+        _prog("transcribe")
+        _check_cancel(cancel_event)
         wl, det, st = run_once(start)
         final, score, snotes = smart.decide(det, wl, st, start)
         for n in snotes:
@@ -191,11 +219,14 @@ def process_file(path, outdir, lang="en", model="auto", words=3, max_chars=32,
                 final = start
             else:
                 reran = True
+                _check_cancel(cancel_event)
                 wl, det, st = run_once(final)
                 score = smart.quality(wl, st)
                 log("   final model=%s confidence=%.2f" % (final, score))
     else:
         final = name
+        _prog("transcribe")
+        _check_cancel(cancel_event)
         wl, det, st = run_once(final)
         score = smart.quality(wl, st)
         log("   model=%s confidence=%.2f" % (final, score))
@@ -207,6 +238,8 @@ def process_file(path, outdir, lang="en", model="auto", words=3, max_chars=32,
         log("   SKIP: no speech")
         return None
 
+    _prog("subtitle")
+    _check_cancel(cancel_event)
     srt_path = os.path.join(outdir, base + ".srt")
     with open(srt_path, "w", encoding="utf-8") as f:
         f.write(subtitles.build_srt(wl, words, max_chars, max_gap, hold, mode))

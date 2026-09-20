@@ -100,6 +100,7 @@ class App:
         self.running = False
         self.downloading = False
         self.profile = None
+        self._cancel = threading.Event()
         self._ensure_font()
         self._build()
         self.root.after(120, self._poll)
@@ -293,6 +294,13 @@ class App:
                                  font=self._font(14, True),
                                  command=self._start)
         self.btn.pack(side="right", padx=8, pady=8)
+        self.cancel_btn = ctk.CTkButton(run, text="■ لغو", width=80,
+                                        fg_color="#8b1a1a",
+                                        hover_color="#a52a2a",
+                                        font=self._font(12),
+                                        state="disabled",
+                                        command=self._cancel_run)
+        self.cancel_btn.pack(side="right", padx=4)
         ctk.CTkButton(run, text="باز کردن پوشه خروجی", fg_color="gray",
                       font=self._font(12),
                       command=self._open_out).pack(side="right", padx=4)
@@ -333,12 +341,22 @@ class App:
                     self.status.configure(text=data)
                 elif kind == "dl_prog":
                     self.dl_prog.set(data)
+                elif kind == "prog":
+                    # determinate overall batch progress 0..1
+                    try:
+                        self.prog.configure(mode="determinate")
+                        self.prog.set(float(data))
+                    except Exception:  # noqa: BLE001
+                        pass
                 elif kind == "prog_start":
-                    self.prog.configure(mode="indeterminate")
-                    self.prog.start()
-                elif kind == "prog_stop":
-                    self.prog.stop()
+                    self.prog.configure(mode="determinate")
                     self.prog.set(0)
+                elif kind == "prog_stop":
+                    try:
+                        self.prog.stop()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self.prog.set(1)
                 elif kind == "hw":
                     self._show_hw(data)
                 elif kind == "dl_done":
@@ -349,6 +367,7 @@ class App:
                 elif kind == "done":
                     self.running = False
                     self.btn.configure(state="normal")
+                    self.cancel_btn.configure(state="disabled")
         except queue.Empty:
             pass
         self.root.after(120, self._poll)
@@ -551,7 +570,9 @@ class App:
             return
         self._save_cfg()
         self.running = True
+        self._cancel.clear()
         self.btn.configure(state="disabled")
+        self.cancel_btn.configure(state="normal")
         self.q.put(("prog_start", None))
         args = dict(outdir=outdir, lang=lang, model=model, words=words,
                     max_chars=max_chars, max_gap=max_gap, hold=hold,
@@ -561,19 +582,47 @@ class App:
         threading.Thread(target=self._worker, args=(files, args),
                          daemon=True).start()
 
+    def _cancel_run(self):
+        if not self.running:
+            return
+        self._cancel.set()
+        self.cancel_btn.configure(state="disabled")
+        self.q.put(("log", "■ لغو درخواست شد… (فایل جاری تمام می‌شود)"))
+
     def _worker(self, files, args):
         q = self.q
         t0 = time.time()
         q.put(("log", "مدل %s در حال لود… (اولین بار کمی طول می‌کشد)"
                % args["model"]))
         ok = 0
+        cancelled = False
+        total = len(files)
+        # coarse per-stage weights inside one file: audio 10%, transcribe 80%,
+        # subtitle 10% — honest about being stage-based, not byte-based.
+        _weights = {"audio": 0.1, "transcribe": 0.9, "subtitle": 1.0}
         for i, path in enumerate(files, 1):
-            q.put(("status", "%d/%d" % (i, len(files))))
-            q.put(("log", "== %s" % os.path.basename(path)))
+            if self._cancel.is_set():
+                cancelled = True
+                break
+            base = os.path.basename(path)
+            q.put(("status", "%d/%d: %s" % (i, total, base)))
+            q.put(("log", "== [%d/%d] %s" % (i, total, base)))
+
+            def _cb(stage, _i=i, _total=total):
+                frac = ((_i - 1) + _weights.get(stage, 0.0)) / max(_total, 1)
+                q.put(("prog", frac))
+
             try:
-                if engine.process_file(path, log=lambda m: q.put(("log", m)),
-                                       **args):
+                if engine.process_file(
+                        path, log=lambda m: q.put(("log", m)),
+                        progress_cb=_cb, cancel_event=self._cancel,
+                        **args):
                     ok += 1
+                q.put(("prog", i / max(total, 1)))
+            except engine.CancelledError:
+                cancelled = True
+                q.put(("log", "   ■ لغو شد: %s" % base))
+                break
             except model_manager.ModelDownloadError as e:
                 q.put(("log", "   FAILED: %s" % e))
                 if e.need_vpn:
@@ -588,8 +637,12 @@ class App:
                 _bc("worker failed: " + repr(traceback.format_exc()))
         q.put(("prog_stop", None))
         q.put(("status", ""))
-        q.put(("log", "== تمام شد: %d/%d فایل در %.1fs — خروجی SRT"
-               % (ok, len(files), time.time() - t0)))
+        if cancelled:
+            q.put(("log", "== لغو شد: %d/%d فایل در %.1fs"
+                   % (ok, total, time.time() - t0)))
+        else:
+            q.put(("log", "== تمام شد: %d/%d فایل در %.1fs — خروجی SRT"
+                   % (ok, total, time.time() - t0)))
         q.put(("done", True))
 
     def run(self):

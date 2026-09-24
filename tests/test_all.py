@@ -343,10 +343,14 @@ class TestTranscribe(unittest.TestCase):
             self.assertEqual(seen, ["audio", "transcribe", "subtitle"])
             self.assertTrue(r["srt"].endswith(".srt"))
             self.assertEqual(r["words"], 1)
-            # temp wav must be gone even though it was never really made
+            # temp wav must be gone even though it was never really made —
+            # scoped to this process's pid prefix: another process's leftover
+            # in the shared TEMP dir must not fail this run.
             td_tmp = os.path.join(os.environ.get("TEMP", "."), "subsaz_tmp")
+            mine = "%d_" % os.getpid()
             left = [f for f in os.listdir(td_tmp)
-                    if f.endswith(".wav")] if os.path.isdir(td_tmp) else []
+                    if f.startswith(mine) and f.endswith(".wav")
+                    ] if os.path.isdir(td_tmp) else []
             self.assertFalse(left, left)
         finally:
             (eng.probe_full, eng.extract_audio, eng.resolve_model,
@@ -427,6 +431,13 @@ class TestTranscribe(unittest.TestCase):
                                      log=logs.append)
             self.assertIsNone(r)  # no speech -> clean skip, no crash
             self.assertTrue(any("probe failed" in s for s in logs), logs)
+            # and the temp wav from this very run is cleaned up too
+            td_tmp = os.path.join(os.environ.get("TEMP", "."), "subsaz_tmp")
+            mine = "%d_" % os.getpid()
+            left = [f for f in os.listdir(td_tmp)
+                    if f.startswith(mine) and f.endswith(".wav")
+                    ] if os.path.isdir(td_tmp) else []
+            self.assertFalse(left, left)
         finally:
             (eng.probe_full, eng.extract_audio, eng.resolve_model,
              eng.transcribe) = orig

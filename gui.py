@@ -576,7 +576,8 @@ class App:
         elif kind == "dl_done":
             self.downloading = False
             self.dl_btn.configure(state="normal")
-            self.dl_prog.set(1)
+            # data = success; only a finished download fills the bar
+            self.dl_prog.set(1 if data else 0)
             try:
                 self.root.after(600, self._dl_prog_forget)
             except Exception:  # noqa: BLE001
@@ -710,11 +711,13 @@ class App:
     def _dl_worker(self, name):
         q = self.q
         q.put(("log", "دانلود مدل %s شروع شد…" % name))
+        ok = False
         try:
             model_manager.download(
                 name,
                 progress_cb=lambda d, t: q.put(("dl_prog", d / max(t, 1))),
                 log=lambda m: q.put(("log", m)))
+            ok = True
             q.put(("log", "✓ مدل %s آماده است." % name))
         except model_manager.ModelDownloadError as e:
             if e.need_vpn:
@@ -727,7 +730,8 @@ class App:
                 q.put(("log", "✗ دانلود ناموفق: %s" % e))
         except Exception as e:  # noqa: BLE001
             q.put(("log", "✗ دانلود ناموفق: %s" % e))
-        q.put(("dl_done", True))
+        # success flag: a failed download must never show 100% on the bar
+        q.put(("dl_done", ok))
 
     # ---------- file picking ----------
     def _pick_files(self):
@@ -896,7 +900,7 @@ class App:
                     mode=self._mode_name(),
                     prompt=self.prompt_var.get() or None,
                     profile=self.profile)
-        threading.Thread(target=self._worker, args=(files, args, name),
+        threading.Thread(target=self._worker, args=(files, args, model),
                          daemon=True).start()
 
     def _cancel_run(self):

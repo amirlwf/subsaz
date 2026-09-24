@@ -30,6 +30,10 @@ DIM_TEXT = (150, 150, 150, 255)
 
 def mark():
     """Trimmed logo mark (alpha-cropped) as RGBA."""
+    if not os.path.isfile(SRC):
+        sys.exit("logo source missing: %s\n"
+                 "Run this from a checkout that has logo/no-background.png."
+                 % SRC)
     im = Image.open(SRC).convert("RGBA")
     bbox = im.getchannel("A").getbbox()
     return im.crop(bbox) if bbox else im
@@ -84,11 +88,11 @@ def main():
     os.makedirs(INST_IMAGES, exist_ok=True)
 
     icon_png = os.path.join(ASSETS, "icon.png")
-    fit_square(m, 256).save(icon_png, "PNG")
-    ico = fit_square(m, 256)
-    ico.save(os.path.join(ASSETS, "icon.ico"), format="ICO",
-             sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64),
-                    (128, 128), (256, 256)])
+    icon_sq = fit_square(m, 256)  # one render, reused for .png and .ico
+    icon_sq.save(icon_png, "PNG")
+    icon_sq.save(os.path.join(ASSETS, "icon.ico"), format="ICO",
+                 sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64),
+                        (128, 128), (256, 256)])
     wizard_banner(m).save(os.path.join(INST_IMAGES, "wizard-image.png"), "PNG")
     fit_square(m, 294, pad=0.02).save(
         os.path.join(INST_IMAGES, "wizard-small.png"), "PNG")

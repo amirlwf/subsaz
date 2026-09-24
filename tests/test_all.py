@@ -95,6 +95,30 @@ class TestSubtitles(unittest.TestCase):
         self.assertEqual(subs.build_srt([], 3, 32, 0.8, 1.0, "two").strip(),
                          "")
 
+    def test_orphan_merge_respects_char_budget(self):
+        # "aaaa bbbb cccc" (14) + long word + orphan: the old merge joined
+        # them into 35/25-char lines, straight over the user's max_chars.
+        words = make_words("aaaa bbbb cccc " + "d" * 20 + " eeee")
+        for ln in subs._split_lines(words, 3, 24, 0.8):
+            line = " ".join(w["word"] for w in ln)
+            self.assertLessEqual(len(line), 24, line)
+        # and with room to spare the same input still packs tightly
+        loose = subs._split_lines(words, 3, 60, 0.8)
+        self.assertLess(len(loose), len(subs._split_lines(words, 3, 24, 0.8))
+                        + 3)
+
+    def test_overlapping_cues_never_end_before_start(self):
+        # ASR can hand two adjacent lines the same start timestamp; the
+        # hold/next-start logic then produced end == start (zero-length cue).
+        words = [
+            {"word": "Alphaaaaaaaaaaaaaaaaaaaaaa.", "start": 1.0, "end": 2.0},
+            {"word": "Bbbbbbbbbbbbbbbbbbbbbbbbbbbb", "start": 1.0, "end": 1.5},
+        ]
+        cues = parse_cues(subs.build_srt(words, 3, 32, 0.8, 1.0, "single"))
+        self.assertEqual(len(cues), 2)
+        for s, e, _t in cues:
+            self.assertGreater(to_secs(e), to_secs(s), (s, e))
+
 
 class TestHardware(unittest.TestCase):
     def test_cpu_info_keys(self):
@@ -209,6 +233,15 @@ class TestNormalize(unittest.TestCase):
     def test_fa_digits(self):
         self.assertIn("۱۲", normalize.fa_digits("12"))
 
+    def test_apply_to_fa_digits_does_not_crash(self):
+        # param used to be named fa_digits, shadowing the function above and
+        # raising TypeError ('bool' object is not callable) for Persian
+        out = normalize.apply(make_words("قیمت 12 تومان"), "fa",
+                              to_fa_digits=True)
+        self.assertIn("۱۲", out[1]["word"])
+        keep = normalize.apply(make_words("قیمت 12"), "fa")
+        self.assertIn("12", keep[1]["word"])
+
 
 class TestBidi(unittest.TestCase):
     def test_ltr_passthrough(self):
@@ -257,6 +290,25 @@ class TestModelManager(unittest.TestCase):
     def test_cached_models_returns_list(self):
         self.assertIsInstance(model_manager.cached_models(), list)
 
+    def test_partial_download_is_not_cached(self):
+        tmp = tempfile.mkdtemp(prefix="subsaz_hf_")
+        repo = os.path.join(tmp,
+                            model_manager._dir_name("Systran/faster-whisper-tiny"))
+        os.makedirs(os.path.join(repo, "blobs"))
+        with open(os.path.join(repo, "blobs", "0badc0de"), "wb") as f:
+            f.write(b"")  # interrupted download: no weights yet
+        orig = model_manager._hub_dir
+        model_manager._hub_dir = lambda: tmp
+        try:
+            self.assertFalse(model_manager.is_cached("tiny"))
+            os.makedirs(os.path.join(repo, "snapshots", "rev"))
+            with open(os.path.join(repo, "snapshots", "rev", "model.bin"),
+                      "wb") as f:
+                f.write(b"")
+            self.assertTrue(model_manager.is_cached("tiny"))
+        finally:
+            model_manager._hub_dir = orig
+
 
 class TestTranscribe(unittest.TestCase):
     def test_precancelled_raises(self):
@@ -268,9 +320,11 @@ class TestTranscribe(unittest.TestCase):
 
     def test_stage_order_with_mocks(self):
         import app.transcribe as eng
+        import app.model_manager as mm
         seen = []
         orig = (eng.probe_full, eng.extract_audio, eng.resolve_model,
                 eng.transcribe)
+        cached = mm.is_cached
         eng.probe_full = lambda _p: {}
         eng.extract_audio = lambda _s, _w: None
         eng.resolve_model = lambda _l, _m, _p=None: ("tiny", "cpu", "int8",
@@ -278,6 +332,9 @@ class TestTranscribe(unittest.TestCase):
         eng.transcribe = lambda *a, **k: (
             [{"word": "hi", "start": 0.0, "end": 1.0}], "en",
             {"avg_logprob": -0.1, "no_speech": 0.0})
+        # the pipeline under test is mocked — model cache state of the host
+        # machine must not decide whether this test passes.
+        mm.is_cached = lambda _m: True
         try:
             with tempfile.TemporaryDirectory() as td:
                 r = eng.process_file("dummy.mp4", td, model="tiny",
@@ -286,9 +343,15 @@ class TestTranscribe(unittest.TestCase):
             self.assertEqual(seen, ["audio", "transcribe", "subtitle"])
             self.assertTrue(r["srt"].endswith(".srt"))
             self.assertEqual(r["words"], 1)
+            # temp wav must be gone even though it was never really made
+            td_tmp = os.path.join(os.environ.get("TEMP", "."), "subsaz_tmp")
+            left = [f for f in os.listdir(td_tmp)
+                    if f.endswith(".wav")] if os.path.isdir(td_tmp) else []
+            self.assertFalse(left, left)
         finally:
             (eng.probe_full, eng.extract_audio, eng.resolve_model,
              eng.transcribe) = orig
+            mm.is_cached = cached
 
     def test_missing_model_raises_clear_error(self):
         import app.model_manager as mm
@@ -299,6 +362,75 @@ class TestTranscribe(unittest.TestCase):
                 engine.process_file("dummy.mp4", ".", model="tiny")
         finally:
             mm.is_cached = orig
+
+    def test_auto_start_only_uses_cached_models(self):
+        # auto mode must never make faster-whisper reach for the network
+        orig = model_manager.is_cached
+        try:
+            model_manager.is_cached = lambda m: m == "base"
+            self.assertEqual(engine._pick_start("en", "small"), "base")
+            model_manager.is_cached = lambda m: m in ("tiny",)
+            self.assertEqual(engine._pick_start("fa", "large-v3-turbo"),
+                             "tiny")
+            model_manager.is_cached = lambda _m: False
+            with self.assertRaises(model_manager.ModelDownloadError):
+                engine._pick_start("en", "small")
+        finally:
+            model_manager.is_cached = orig
+
+    def test_auto_falls_back_when_recommendation_not_cached(self):
+        # Cross-module contract: GUI/CLI start an auto run when ANY model is
+        # cached, so process_file must reach _pick_start() instead of raising
+        # ModelDownloadError for the (not downloaded) recommendation.
+        import app.transcribe as eng
+        import app.model_manager as mm
+        orig = (eng.probe_full, eng.extract_audio, eng.resolve_model,
+                eng.transcribe, mm.is_cached)
+        eng.probe_full = lambda _p: {}
+        eng.extract_audio = lambda _i, _o: None
+        eng.resolve_model = lambda _l, _m, _p=None: (
+            "small", "cpu", "int8", 2, ["rec=small"])
+        eng.transcribe = lambda *a, **k: (
+            make_words("hello there"), "en",
+            {"avg_logprob": -0.1, "no_speech": 0.0})
+        mm.is_cached = lambda m: m == "tiny"  # only tiny is downloaded
+        try:
+            r = eng.process_file("dummy.mp4", tempfile.mkdtemp(),
+                                 lang="en", model="auto")
+            self.assertIsNotNone(r)
+            self.assertEqual(r["model"], "tiny")
+        finally:
+            (eng.probe_full, eng.extract_audio, eng.resolve_model,
+             eng.transcribe, mm.is_cached) = orig
+
+    def test_probe_failure_is_advisory_and_wav_is_cleaned(self):
+        import app.transcribe as eng
+        import app.model_manager as mm
+        orig = (eng.probe_full, eng.extract_audio, eng.resolve_model,
+                eng.transcribe)
+        cached = mm.is_cached
+        logs = []
+
+        def _boom(_p):
+            raise RuntimeError("ffprobe exploded")
+
+        eng.probe_full = _boom
+        eng.extract_audio = lambda _s, _w: None
+        eng.resolve_model = lambda _l, _m, _p=None: ("tiny", "cpu", "int8",
+                                                    2, [])
+        eng.transcribe = lambda *a, **k: (
+            [], "en", {"avg_logprob": -0.1, "no_speech": 0.0})
+        mm.is_cached = lambda _m: True
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                r = eng.process_file("dummy.mp4", td, model="tiny",
+                                     log=logs.append)
+            self.assertIsNone(r)  # no speech -> clean skip, no crash
+            self.assertTrue(any("probe failed" in s for s in logs), logs)
+        finally:
+            (eng.probe_full, eng.extract_audio, eng.resolve_model,
+             eng.transcribe) = orig
+            mm.is_cached = cached
 
 
 try:
@@ -360,25 +492,32 @@ class TestGUI(unittest.TestCase):
                              {1: "single", 2: "two", 3: "three"}[n])
             for w in (1, 6):
                 a._on_words_slider(w)
+                self.assertEqual(int(a.words_var.get()), w)
                 for c in (20, 50):
                     a._on_chars_slider(c)
                     a.root.update()
-                    self.assertTrue(a.pv_text.cget("text").strip())
-                    self.assertIn("کیو", a.pv_count.cget("text"))
-        # nav round-trip
-        cur = a.pv_text.cget("text")
-        a._pv_next()
-        a._pv_prev()
-        self.assertEqual(a.pv_text.cget("text"), cur)
+                    self.assertEqual(int(a.chars_var.get()), c)
 
-    def test_lang_switch_rebuilds_preview(self):
+    def test_lang_switch_persists(self):
         a = self.app
         a.lang_var.set("fa")
         a._on_setting_change()
-        self.assertIn("سلام", a.pv_text.cget("text"))
+        self.assertEqual(a.lang_var.get(), "fa")
         a.lang_var.set("en")
         a._on_setting_change()
-        self.assertIn("Hello", a.pv_text.cget("text"))
+        self.assertEqual(a.lang_var.get(), "en")
+
+    def test_preview_removed(self):
+        # Premiere-style preview feature was fully removed
+        a = self.app
+        for attr in ("pv_text", "pv_count", "pv_time", "pv_warn",
+                     "pv_box", "pv_stage", "pv_play_btn", "pv_idx",
+                     "pv_playing"):
+            self.assertFalse(hasattr(a, attr), attr)
+        for meth in ("_preview_rebuild", "_preview_cues", "_pv_next",
+                     "_pv_prev", "_pv_toggle_play", "_pv_tick",
+                     "_sample_words"):
+            self.assertFalse(hasattr(a, meth), meth)
 
     def test_poll_survives_garbage(self):
         a = self.app

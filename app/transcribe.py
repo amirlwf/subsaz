@@ -94,9 +94,13 @@ def _get_model(name, device, compute_type, threads):
 
 def transcribe(audio, model_name="small", language=None, prompt=None,
                batched=True, threads=8, beam=5, device="auto",
-               compute_type="int8"):
+               compute_type="int8", cancel_event=None):
     from faster_whisper import BatchedInferencePipeline
     model = _get_model(model_name, device, compute_type, threads)
+    # "auto" is our CLI spelling for "detect the language yourself";
+    # faster-whisper only understands None here (any other string raises).
+    if isinstance(language, str) and language.lower() in ("auto", ""):
+        language = None
     kw = dict(language=language, vad_filter=True, word_timestamps=True,
               beam_size=beam, condition_on_previous_text=False)
     if prompt is None and language == "fa":
@@ -112,6 +116,9 @@ def transcribe(audio, model_name="small", language=None, prompt=None,
     words = []
     lp_sum, ns_sum, n_seg = 0.0, 0.0, 0
     for seg in segments:
+        # Cancellation lands between chunks, not just between files: a
+        # long video no longer ignores the ■ لغو button until it ends.
+        _check_cancel(cancel_event)
         lp_sum += seg.avg_logprob
         ns_sum += seg.no_speech_prob
         n_seg += 1
@@ -143,6 +150,32 @@ def resolve_model(lang, model, profile=None):
         profile["threads"], notes
 
 
+def _short_err(e, limit=300):
+    """One line, bounded error text (ffmpeg/ffprobe stderr can be huge)."""
+    s = ("%s" % e).strip().replace("\n", " ")
+    return s[:limit] + ("…" if len(s) > limit else "")
+
+
+def _pick_start(lang, recommended):
+    """First-pass model for model='auto'.
+
+    Only already-cached models are ever chosen, recommended/accurate first —
+    so faster-whisper can never silently reach for the network on a machine
+    where that model was never downloaded.
+    """
+    order = [recommended, smart.ACCURATE.get(lang, "small"),
+             "large-v3-turbo", "medium", "small", "base", "tiny"]
+    seen = set()
+    for m in order:
+        if m and m not in seen:
+            seen.add(m)
+            if model_manager.is_cached(m):
+                return m
+    raise model_manager.ModelDownloadError(
+        "هیچ مدلی دانلود نشده است. اول از بخش «سیستم و مدل» «دانلود مدل» را بزن.",
+        need_vpn=False)
+
+
 def process_file(path, outdir, lang="en", model="auto", words=3, max_chars=32,
                  max_gap=0.8, hold=1.0, mode="single", prompt=None,
                  profile=None, log=print, progress_cb=None,
@@ -151,7 +184,8 @@ def process_file(path, outdir, lang="en", model="auto", words=3, max_chars=32,
 
     progress_cb(stage) is called with 'audio' / 'transcribe' / 'subtitle'
     so batch UIs can show per-file progress. cancel_event (threading.Event)
-    aborts between stages with CancelledError.
+    aborts between stages and between transcription chunks with
+    CancelledError; the temp wav is always removed, on every path.
     """
     def _prog(stage):
         if progress_cb is not None:
@@ -169,82 +203,96 @@ def process_file(path, outdir, lang="en", model="auto", words=3, max_chars=32,
     t0 = time.time()
     try:
         meta = probe_full(path)
-    except Exception:
+    except Exception as e:  # noqa: BLE001 — probe is advisory; ffmpeg decides
         meta = {}
+        log("   warn: probe failed (%s)" % _short_err(e))
     td = os.path.join(os.environ.get("TEMP", "."), "subsaz_tmp")
     os.makedirs(td, exist_ok=True)
     wav = os.path.join(td, "%d_%s.wav" % (os.getpid(), base[:80]))
-    _prog("audio")
-    _check_cancel(cancel_event)
-    extract_audio(path, wav)
+    try:
+        _prog("audio")
+        _check_cancel(cancel_event)
+        try:
+            extract_audio(path, wav)
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(
+                "استخراج صدا ناموفق بود (ffmpeg): %s" % _short_err(e))
+        if meta.get("duration"):
+            log("   media: %.1fs%s" % (
+                meta["duration"],
+                " • %dx%d" % (meta["width"], meta["height"])
+                if meta.get("width") and meta.get("height") else ""))
 
-    name, device, compute, threads, notes = resolve_model(
-        lang, model, profile)
-    prof = profile or hardware.classify()
-    for n in notes:
-        log("   " + n)
-    if not model_manager.is_cached(name):
+        name, device, compute, threads, notes = resolve_model(
+            lang, model, profile)
+        for n in notes:
+            log("   " + n)
+        # model='auto' must NOT gate on the recommended model here: the
+        # recommendation may not be downloaded yet, and _pick_start() below
+        # picks the best *cached* model instead (GUI/CLI both rely on that).
+        # Explicit models were already checked at the top of the function.
+        if model != "auto" and not model_manager.is_cached(name):
+            raise model_manager.ModelDownloadError(
+                "مدل %s روی سیستم نیست. اول دانلودش کن." % name,
+                need_vpn=False)
+
+        beam = 5 if device == "cuda" else (1 if threads <= 4 else 5)
+
+        def run_once(m):
+            wl, det, st = transcribe(wav, m, lang, prompt, threads=threads,
+                                     beam=beam, device=device,
+                                     compute_type=compute,
+                                     cancel_event=cancel_event)
+            normalize.apply(wl, det)
+            return wl, det, st
+
+        reran = False
+        if model == "auto":
+            start = _pick_start(lang, name)
+            _prog("transcribe")
+            _check_cancel(cancel_event)
+            wl, det, st = run_once(start)
+            # Decide on the language Whisper actually heard: --lang auto (or
+            # a wrong manual pick) still gets the right upgrade chain.
+            final, score, snotes = smart.decide(det, wl, st, start)
+            for n in snotes:
+                log("   " + n)
+            if final != start:
+                if not model_manager.is_cached(final):
+                    log("   مدل %s دانلود نشده — با همان %s ادامه می‌دهم."
+                        % (final, start))
+                    final = start
+                else:
+                    reran = True
+                    _check_cancel(cancel_event)
+                    wl, det, st = run_once(final)
+                    score = smart.quality(wl, st)
+                    log("   final model=%s confidence=%.2f" % (final, score))
+        else:
+            final = name
+            _prog("transcribe")
+            _check_cancel(cancel_event)
+            wl, det, st = run_once(final)
+            score = smart.quality(wl, st)
+            log("   model=%s confidence=%.2f" % (final, score))
+        if not wl:
+            log("   SKIP: no speech")
+            return None
+
+        _prog("subtitle")
+        _check_cancel(cancel_event)
+        srt_path = os.path.join(outdir, base + ".srt")
+        with open(srt_path, "w", encoding="utf-8") as f:
+            f.write(subtitles.build_srt(wl, words, max_chars, max_gap, hold,
+                                        mode))
+        log("   lang=%s words=%d -> %s"
+            % (det, len(wl), os.path.basename(srt_path)))
+        log("   done in %.1fs" % (time.time() - t0))
+        return {"srt": srt_path, "lang": det, "words": len(wl),
+                "secs": time.time() - t0, "model": final,
+                "confidence": score, "reran": reran}
+    finally:
         try:
             os.remove(wav)
         except OSError:
             pass
-        raise model_manager.ModelDownloadError(
-            "مدل %s روی سیستم نیست. اول دانلودش کن." % name, need_vpn=False)
-
-    beam = 5 if device == "cuda" else (1 if threads <= 4 else 5)
-
-    def run_once(m):
-        wl, det, st = transcribe(wav, m, lang, prompt, threads=threads,
-                                 beam=beam, device=device,
-                                 compute_type=compute)
-        normalize.apply(wl, det)
-        return wl, det, st
-
-    reran = False
-    if model == "auto":
-        start = "small" if lang != "fa" else "base"
-        # strong rigs jump straight to the recommended model
-        if prof["tier"] in (
-                "GPU_STRONG", "GPU_MID", "CPU_STRONG"):
-            start = name
-        _prog("transcribe")
-        _check_cancel(cancel_event)
-        wl, det, st = run_once(start)
-        final, score, snotes = smart.decide(det, wl, st, start)
-        for n in snotes:
-            log("   " + n)
-        if final != start:
-            if not model_manager.is_cached(final):
-                log("   مدل %s دانلود نشده — با همان %s ادامه می‌دهم." % (final, start))
-                final = start
-            else:
-                reran = True
-                _check_cancel(cancel_event)
-                wl, det, st = run_once(final)
-                score = smart.quality(wl, st)
-                log("   final model=%s confidence=%.2f" % (final, score))
-    else:
-        final = name
-        _prog("transcribe")
-        _check_cancel(cancel_event)
-        wl, det, st = run_once(final)
-        score = smart.quality(wl, st)
-        log("   model=%s confidence=%.2f" % (final, score))
-    try:
-        os.remove(wav)
-    except OSError:
-        pass
-    if not wl:
-        log("   SKIP: no speech")
-        return None
-
-    _prog("subtitle")
-    _check_cancel(cancel_event)
-    srt_path = os.path.join(outdir, base + ".srt")
-    with open(srt_path, "w", encoding="utf-8") as f:
-        f.write(subtitles.build_srt(wl, words, max_chars, max_gap, hold, mode))
-    log("   lang=%s words=%d -> %s" % (det, len(wl), os.path.basename(srt_path)))
-    log("   done in %.1fs" % (time.time() - t0))
-    return {"srt": srt_path, "lang": det, "words": len(wl),
-            "secs": time.time() - t0, "model": final,
-            "confidence": score, "reran": reran}

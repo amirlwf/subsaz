@@ -46,11 +46,18 @@ def _split_lines(words, max_words=3, max_chars=32, max_gap=0.8):
             cur, cur_len = [], 0
     if cur:
         lines.append(cur)
-    # merge tiny orphan lines (<2 words) into neighbors
+    # merge tiny orphan lines (<2 words) into neighbors — but never over the
+    # char budget: merging two near-full lines used to produce lines longer
+    # than the user's max_chars.
+    def _line_len(line):
+        return sum(len(w["word"]) for w in line) + max(0, len(line) - 1)
+
     merged = []
     for line in lines:
         if (merged and len(line) == 1 and len(merged[-1]) < max_words + 1
-                and line[0]["start"] - merged[-1][-1]["end"] < 0.5):
+                and line[0]["start"] - merged[-1][-1]["end"] < 0.5
+                and _line_len(merged[-1]) + 1 + len(line[0]["word"])
+                <= max_chars):
             merged[-1].extend(line)
         else:
             merged.append(line)
@@ -69,7 +76,11 @@ def build_srt(words, max_words=3, max_chars=32, max_gap=0.8, hold=1.0,
         start = first["start"]
         end = max(last["end"], start + 0.05)
         if n < len(cues):
-            end = min(cues[n][0][0]["start"], end + hold)
+            # hold until the next cue starts (cap at +hold), but never emit
+            # an end <= start: ASR can return identical timestamps for two
+            # adjacent cues, which players drop or flash.
+            nxt = cues[n][0][0]["start"]
+            end = max(start + 0.05, min(nxt, end + hold))
         text = "\n".join(" ".join(w["word"] for w in ln) for ln in cue)
         blocks.append("%d\n%s --> %s\n%s\n" % (n, fmt(start), fmt(end), text))
     return "\n".join(blocks)

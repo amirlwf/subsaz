@@ -27,6 +27,7 @@ def run_one(path, args):
         max_chars=args.max_chars, max_gap=args.max_gap, hold=args.hold,
         mode=args.mode, prompt=args.prompt)
     if not r:
+        print("SKIP (no speech):", os.path.basename(path))
         return False
     print("wrote", r["srt"])
     return True
@@ -94,16 +95,23 @@ def main():
         if not vids:
             sys.exit("no videos without SRT in " + a.dir)
         print("batch: %d file(s)" % len(vids))
+        failed = 0
         for f in vids:
             print("==", f)
             try:
-                run_one(os.path.join(a.dir, f), a)
+                run_one(os.path.join(a.dir, f), a)  # False = silent file, ok
             except model_manager.ModelDownloadError as e:
+                failed += 1
                 if e.need_vpn:
                     print(model_manager.VPN_MESSAGE_FA)
                 print("FAILED:", f, "-", e)
             except Exception as e:  # noqa: BLE001
+                failed += 1
                 print("FAILED:", f, "-", e)
+        print("done: %d ok, %d failed" % (len(vids) - failed, failed))
+        if failed:
+            # non-zero exit so scripts/CI can trust the batch result
+            sys.exit(1)
         return
 
     if not a.video or not os.path.isfile(a.video):
@@ -113,6 +121,8 @@ def main():
     except model_manager.ModelDownloadError as e:
         if e.need_vpn:
             print(model_manager.VPN_MESSAGE_FA)
+        sys.exit("FAILED: %s" % e)
+    except Exception as e:  # noqa: BLE001 — keep the traceback out of CLI use
         sys.exit("FAILED: %s" % e)
 
 

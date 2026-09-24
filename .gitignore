@@ -29,6 +29,10 @@ subsaz_tmp/
 *.wav
 *.srt
 
+# local-only exports / scratch (ForHermes holds credentials — never commit)
+ForHermes/
+assets/_preview_ico.png
+
 # maintainer-only docs (release guides, personal checklists) — never committed
 docs/
 

@@ -33,16 +33,26 @@ def _dir_name(repo_id):
     return "models--" + repo_id.replace("/", "--")
 
 
+# files that actually let faster-whisper load a model
+WEIGHT_EXT = (".bin", ".safetensors", ".pt", ".pth")
+
+
 def is_cached(model):
+    """True only when real weights are on disk.
+
+    A half-finished snapshot_download leaves a non-empty repo dir with no
+    weight file; treating that as "cached" made WhisperModel try to load a
+    model that isn't there. The old code also returned True for ANY
+    non-empty dir and only looked for .bin.
+    """
     hub = _hub_dir()
     for repo in REPO_IDS.get(model, []):
         d = os.path.join(hub, _dir_name(repo))
-        if os.path.isdir(d) and os.listdir(d):
-            # must contain at least a snapshot with weights
-            for root, _dirs, files in os.walk(d):
-                if any(f.endswith(".bin") for f in files):
-                    return True
-            return True  # dir exists: treat as cached, loader will verify
+        if not os.path.isdir(d):
+            continue
+        for root, _dirs, files in os.walk(d):
+            if any(f.endswith(WEIGHT_EXT) for f in files):
+                return True
     return False
 
 

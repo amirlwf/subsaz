@@ -23,6 +23,7 @@
 |---|---|
 | `SubSaz-Setup-x.y.z.exe` | نصاب ویندوز (شورتکات منوی استارت و دسکتاپ + آن‌اینستالر) |
 | `SubSaz-portable-win64.zip` | پرتابل — زیپ را باز کن و `SubSaz.exe` را اجرا کن، بدون نصب |
+| `SubSaz-cli-win64.zip` | نسخه ترمینال (`subsaz-cli`) — پردازش گروهی و اسکریپت، همان موتور |
 
 > 🇮🇷 اگر دانلود مدل ناموفق بود، به VPN وصل شو و دوباره تلاش کن —
 > مدل‌ها روی HuggingFace هستند که تحریم است. خود برنامه هم این را می‌گوید.
@@ -80,6 +81,9 @@ subsaz-cli --dir C:\clips --lang en
 subsaz-cli --scan
 subsaz-cli --download-model small
 ```
+
+فایل `subsaz-cli.exe` داخل `SubSaz-cli-win64.zip` است — زیپ را باز کن و از
+همان پوشه اجرا کن، یا پوشه را به `PATH` ویندوز اضافه کن.
 
 ## 🎯 جزئیات دقت
 

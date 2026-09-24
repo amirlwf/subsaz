@@ -33,11 +33,20 @@ def fa_digits(text: str) -> str:
     return text.translate(str.maketrans("0123456789", _DIGIT_FA))
 
 
-def apply(words: list, lang: str, fa_digits: bool = False) -> list:
-    """Normalize word dicts in place-safe way; returns same list."""
+def apply(words: list, lang: str, to_fa_digits: bool = False) -> list:
+    """Normalize word dicts in place-safe way; returns same list.
+
+    to_fa_digits was previously named `fa_digits`, which shadowed the
+    module-level fa_digits() function and crashed with TypeError as soon
+    as a caller passed True for a Persian transcript.
+
+    to_fa_digits is opt-in and currently has no production caller: the SRT
+    keeps ASCII digits on purpose so numbers stay searchable and editable
+    in editors/Premiere. Pass True if a Persian-digit style is ever wanted.
+    """
     for w in words:
         t = fix_text(w["word"], lang)
-        if fa_digits and lang == "fa":
+        if to_fa_digits and lang == "fa":
             t = fa_digits(t)
         w["word"] = t
     return words

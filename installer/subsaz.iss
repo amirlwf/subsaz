@@ -1,8 +1,9 @@
 ; SubSaz (ساب‌ساز) — Inno Setup script. Produces SubSaz-Setup-x.y.z.exe
-; Requires: Inno Setup 6 (https://jrsoftware.org/isinfo.php)
+; Requires: Inno Setup 6.5.0+ (PNG wizard images; PNG transparency needs 6.6+)
+;          https://jrsoftware.org/isinfo.php
 ; Build first: pyinstaller subsaz-gui.spec  -> dist\SubSaz\
 #define MyAppName "SubSaz"
-#define MyAppVersion "0.0.3"
+#define MyAppVersion "0.0.4"
 #define MyAppPublisher "SubSaz"
 #define MyAppExeName "SubSaz.exe"
 
@@ -22,22 +23,25 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; branding: logo/ is the source, tools/make_brand_assets.py regenerates these
 SetupIconFile=..\assets\icon.ico
+WizardImageFile=images\wizard-image.png
+WizardSmallImageFile=images\wizard-small.png
+WizardImageBackColor=clBlack
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
-  GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+  GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Files]
-; main app (PyInstaller onedir output)
-Source: "..\dist\SubSaz\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
-; portable ffmpeg (optional — copy ffmpeg.exe/ffprobe.exe next to the .iss
-; build or into assets\bin before PyInstaller; picked up automatically)
-Source: "..\assets\bin\ffmpeg.exe"; DestDir: "{app}\assets\bin"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "..\assets\bin\ffprobe.exe"; DestDir: "{app}\assets\bin"; Flags: ignoreversion skipifsourcedoesntexist
+; main app (PyInstaller onedir output) — ffmpeg/ffprobe are already inside
+; _internal\assets\bin via the spec, do NOT ship a second copy
+Source: "..\dist\SubSaz\*"; DestDir: "{app}"; \
+  Flags: ignoreversion recursesubdirs; \
+  Excludes: gui_started.log
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

@@ -93,7 +93,7 @@ MODEL_MB = {"auto": 0, "large-v3-turbo": 1600, "medium": 1500,
 TEAL = "#15919B"          # firoozeh — primary actions
 TEAL_HOVER = "#0E6E76"
 TEAL_TEXT = ("#0E6E76", "#5AD6DE")     # headings in light/dark mode
-SAFFRON = "#D98E1B"       # zafaran — active segment, preview frame
+SAFFRON = "#D98E1B"       # zafaran — active segment
 SAFFRON_TEXT = ("#9C6B0F", "#F0B43C")  # section titles
 BORDO = "#A93226"         # anari — cancel/danger
 BORDO_HOVER = "#7B241C"
@@ -109,8 +109,15 @@ class App:
         self.cfg = app_config.load()
         self.root = root or ctk.CTk()
         self.root.title("ساب‌ساز — زیرنویس دقیق کلمه‌به‌کلمه")
-        self.root.geometry("880x980")
-        self.root.minsize(780, 880)
+        # screen-aware: never open bigger than the display can show
+        try:
+            _sw = self.root.winfo_screenwidth()
+            _sh = self.root.winfo_screenheight()
+        except Exception:  # noqa: BLE001
+            _sw, _sh = 1920, 1080
+        self.root.geometry("%dx%d" % (min(820, int(_sw * 0.88)),
+                                      min(700, int(_sh * 0.84))))
+        self.root.minsize(600, 460)
         try:
             self.root.configure(fg_color=ROOT_BG)
         except Exception:  # noqa: BLE001
@@ -120,8 +127,6 @@ class App:
         self.downloading = False
         self.profile = None
         self._cancel = threading.Event()
-        self.pv_idx = 0
-        self.pv_playing = False
         self._ensure_font()
         self._set_window_icon()
         self._build()
@@ -189,7 +194,7 @@ class App:
         r = self.root
 
         head = ctk.CTkFrame(r, fg_color=CARD)
-        head.pack(fill="x", padx=10, pady=(10, 4))
+        head.pack(fill="x", padx=8, pady=(8, 3))
         # in-app logo (assets/icon.png), text-only fallback.
         # Plain tk.Label (not CTkLabel): no PIL/CTkImage dependency, and no
         # HighDPI-scaling warning — bg is synced to the card in both modes.
@@ -205,13 +210,13 @@ class App:
                 self._logo_label = tk.Label(
                     head, image=_img, bg=self._card_bg(), borderwidth=0,
                     highlightthickness=0)
-                self._logo_label.pack(side="right", padx=(12, 0), pady=8)
+                self._logo_label.pack(side="right", padx=(10, 0), pady=6)
         except Exception:  # noqa: BLE001
             _bc("logo load failed")
         # RTL: primary content from the right
         ctk.CTkLabel(head, text="ساب‌ساز", text_color=TEAL_TEXT,
-                     font=self._font(22, True)).pack(side="right", padx=12,
-                                                    pady=8)
+                     font=self._font(18, True)).pack(side="right", padx=10,
+                                                    pady=6)
         ctk.CTkLabel(
             head, text="ویدیو یا صوت بده، فایل SRT دقیق بگیر",
             font=self._font(12)).pack(side="right", padx=4)
@@ -220,9 +225,16 @@ class App:
                                        command=self._toggle_theme)
         self.theme_btn.pack(side="left", padx=12)
 
+        # Scrollable body: every card below lives here, so a short window
+        # can still reach all content (was the "can't scroll" bug — cards
+        # were packed straight onto the root with a fixed oversized geom).
+        body = ctk.CTkScrollableFrame(r, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=4, pady=(0, 6))
+        r = body
+
         # 1. files
         files = ctk.CTkFrame(r, fg_color=CARD)
-        files.pack(fill="x", padx=10, pady=4)
+        files.pack(fill="x", padx=8, pady=3)
         ctk.CTkLabel(files, text="۱. فایل‌ها (ویدیو یا صوت)",
                      text_color=SAFFRON_TEXT,
                      font=self._font(13, True)).pack(anchor="e", padx=12,
@@ -238,31 +250,49 @@ class App:
         ctk.CTkButton(brow, text="پاک کردن", font=self._font(12),
                       fg_color="gray", command=self._clear).pack(side="right",
                                                                  padx=4)
-        self.lst = tk.Listbox(files, height=5, activestyle="dotbox",
+        # listbox + scrollbar (plain tk: CTk has no Listbox; keep theme sync)
+        lst_wrap = ctk.CTkFrame(files, fg_color="transparent")
+        lst_wrap.pack(fill="x", padx=12, pady=(0, 4))
+        self.lst = tk.Listbox(lst_wrap, height=4, activestyle="dotbox",
                               font=(FONT_FAMILY, 11),
                               bg="#2b2b2b", fg="#eee",
                               selectbackground=TEAL,
-                              selectforeground="#fff")
-        self.lst.pack(fill="x", padx=12, pady=(0, 8))
+                              selectforeground="#fff",
+                              highlightthickness=0, borderwidth=0,
+                              exportselection=False)
+        self.lst.pack(side="left", fill="x", expand=True)
+        _lsb = tk.Scrollbar(lst_wrap, command=self.lst.yview,
+                            width=10, takefocus=0,
+                            highlightthickness=0, borderwidth=0)
+        _lsb.pack(side="right", fill="y")
+        self.lst.configure(yscrollcommand=_lsb.set)
+
+        def _lst_wheel(e):
+            # stop CTkScrollableFrame's bind_all from ALSO scrolling the
+            # page while the wheel is over the list (double-scroll bug).
+            self.lst.yview_scroll(-1 if e.delta > 0 else 1, "units")
+            return "break"
+
+        self.lst.bind("<MouseWheel>", _lst_wheel)
         self._dnd_hook()
         ctk.CTkLabel(files, text="فرمت‌ها: mp4 mov mkv webm … + mp3 wav m4a aac flac ogg opus wma",
-                     font=self._font(11), text_color="gray").pack(anchor="e",
+                     font=self._font(10), text_color="gray").pack(anchor="e",
                                                                   padx=12,
-                                                                  pady=(0, 8))
+                                                                  pady=(0, 6))
 
         # 2. system & model
         hw = ctk.CTkFrame(r, fg_color=CARD)
-        hw.pack(fill="x", padx=10, pady=4)
+        hw.pack(fill="x", padx=8, pady=3)
         ctk.CTkLabel(hw, text="۲. سیستم و مدل",
                      text_color=SAFFRON_TEXT,
                      font=self._font(13, True)).pack(anchor="e", padx=12,
                                                     pady=(8, 0))
         self.hw_label = ctk.CTkLabel(hw, text="در حال اسکن سیستم…",
-                                     font=self._font(11), wraplength=780,
+                                     font=self._font(11), wraplength=560,
                                      justify="right")
         self.hw_label.pack(anchor="e", padx=12, pady=2)
         self.rec_label = ctk.CTkLabel(hw, text="", font=self._font(12, True),
-                                      wraplength=780, justify="right")
+                                      wraplength=560, justify="right")
         self.rec_label.pack(anchor="e", padx=12, pady=2)
         mrow = ctk.CTkFrame(hw, fg_color="transparent")
         mrow.pack(fill="x", padx=8, pady=4)
@@ -270,8 +300,8 @@ class App:
                      justify="right").pack(side="right", padx=4)
         self.model_var = tk.StringVar(value=self.cfg.get("model", "auto"))
         self.model_box = ctk.CTkComboBox(mrow, variable=self.model_var,
-                                         values=list(MODELS), width=170,
-                                         font=self._font(12),
+                                         values=list(MODELS), width=150,
+                                         font=self._font(11),
                                          command=self._on_model_change)
         self.model_box.pack(side="right", padx=4)
         self.dl_btn = ctk.CTkButton(mrow, text="⬇ دانلود مدل",
@@ -282,14 +312,21 @@ class App:
         ctk.CTkButton(mrow, text="🔄 اسکن مجدد", font=self._font(12),
                       fg_color="gray",
                       command=self._rescan).pack(side="right", padx=4)
-        self.dl_prog = ctk.CTkProgressBar(mrow, width=160,
+        # hidden until a download starts — idle bar was wasted height
+        self.dl_prog = ctk.CTkProgressBar(mrow, width=120,
                                           progress_color=TEAL)
-        self.dl_prog.pack(side="left", padx=8)
         self.dl_prog.set(0)
+
+        def _hide_dl_prog():
+            # a new download may have started during the delay
+            if not self.downloading:
+                self.dl_prog.pack_forget()
+
+        self._dl_prog_forget = _hide_dl_prog
 
         # 3. subtitle settings
         st = ctk.CTkFrame(r, fg_color=CARD)
-        st.pack(fill="x", padx=10, pady=4)
+        st.pack(fill="x", padx=8, pady=3)
         ctk.CTkLabel(st, text="۳. تنظیمات زیرنویس",
                      text_color=SAFFRON_TEXT,
                      font=self._font(13, True)).pack(anchor="e", padx=12,
@@ -301,12 +338,12 @@ class App:
         ctk.CTkLabel(g, text="زبان:", font=self._font(12),
                      justify="right").grid(row=0, column=4, padx=4, sticky="e")
         self.lang_var = tk.StringVar(value=self.cfg.get("lang", "en"))
-        ctk.CTkComboBox(g, variable=self.lang_var, values=("en", "fa"),
+        ctk.CTkComboBox(g, variable=self.lang_var, values=("en", "fa", "auto"),
                         width=80, font=self._font(12),
                         command=self._on_setting_change).grid(
                             row=0, column=3, padx=4)
 
-        ctk.CTkLabel(g, text="حالت:", font=self._font(12),
+        ctk.CTkLabel(g, text="حالت: (مثل کپشن پریمیر)", font=self._font(12),
                      justify="right").grid(row=0, column=2, padx=4, sticky="e")
         # Premiere-style lines-per-cue segmented control (1 / 2 / 3 lines)
         self.lines_n = {"single": 1, "two": 2, "three": 3}.get(
@@ -315,14 +352,10 @@ class App:
         segf.grid(row=0, column=0, columnspan=2, padx=4, sticky="w")
         self.seg_btns = {}
         for _n, _t in ((1, "۱ خط"), (2, "۲ خط"), (3, "۳ خط")):
-            _b = ctk.CTkButton(segf, text=_t, width=64, font=self._font(12),
+            _b = ctk.CTkButton(segf, text=_t, width=58, font=self._font(11),
                                command=lambda n=_n: self._set_lines(n))
             _b.pack(side="right", padx=2)
             self.seg_btns[_n] = _b
-        ctk.CTkLabel(g, text="(مثل کپشن پریمیر)",
-                     font=self._font(11), justify="right",
-                     text_color="gray").grid(row=1, column=0, columnspan=2,
-                                             padx=4, sticky="w")
 
         # sliders: words/line + chars/line, synced into words_var/chars_var
         # so the save/run paths below stay unchanged
@@ -370,19 +403,19 @@ class App:
         self.chars_slider.set(_cv)
 
         ctk.CTkLabel(g, text="گپ (ثانیه):", font=self._font(12),
-                     justify="right").grid(row=2, column=3, padx=4, pady=4,
+                     justify="right").grid(row=1, column=4, padx=4, pady=3,
                                            sticky="e")
         self.gap_var = tk.StringVar(value=str(self.cfg.get("max_gap", 0.8)))
-        ctk.CTkEntry(g, textvariable=self.gap_var, width=80,
+        ctk.CTkEntry(g, textvariable=self.gap_var, width=70,
                      font=self._font(12), justify="right").grid(
-                         row=2, column=2, padx=4, pady=4)
+                         row=1, column=3, padx=4, pady=3)
         ctk.CTkLabel(g, text="مکث (ثانیه):", font=self._font(12),
-                     justify="right").grid(row=2, column=1, padx=4, pady=4,
+                     justify="right").grid(row=1, column=2, padx=4, pady=3,
                                            sticky="e")
         self.hold_var = tk.StringVar(value=str(self.cfg.get("hold", 1.0)))
-        ctk.CTkEntry(g, textvariable=self.hold_var, width=80,
+        ctk.CTkEntry(g, textvariable=self.hold_var, width=70,
                      font=self._font(12), justify="right").grid(
-                         row=2, column=0, padx=4, pady=4)
+                         row=1, column=1, padx=4, pady=3)
 
         prow = ctk.CTkFrame(st, fg_color="transparent")
         prow.pack(fill="x", padx=8, pady=2)
@@ -390,7 +423,7 @@ class App:
                      font=self._font(12)).pack(side="right", padx=4)
         self.prompt_var = tk.StringVar(value=self.cfg.get("prompt", ""))
         self.prompt_entry = ctk.CTkEntry(
-            prow, textvariable=self.prompt_var, width=340,
+            prow, textvariable=self.prompt_var, width=240,
             font=self._font(12), justify="right",
             placeholder_text="مثلا: WordLab, BrandX")
         self.prompt_entry.pack(side="right", padx=4)
@@ -398,7 +431,7 @@ class App:
         ctk.CTkLabel(prow, text="خروجی:",
                      font=self._font(12)).pack(side="right", padx=(12, 4))
         self.out_var = tk.StringVar(value=self.cfg.get("outdir", ""))
-        ctk.CTkEntry(prow, textvariable=self.out_var, width=220,
+        ctk.CTkEntry(prow, textvariable=self.out_var, width=180,
                      font=self._font(12)).pack(side="right", padx=4, fill="x",
                                                expand=True)
         ctk.CTkButton(prow, text="…", width=40, font=self._font(12),
@@ -408,65 +441,17 @@ class App:
         # so show the corrected rendering underneath while typing.
         self.prompt_echo = ctk.CTkLabel(
             st, text="", font=self._font(11), text_color="gray",
-            justify="right", wraplength=760)
+            justify="right", wraplength=540)
         self.prompt_echo.pack(anchor="e", padx=12, pady=(0, 2))
-
-        # live Premiere-style caption preview: 16:9 video mock, captions
-        # docked at the bottom like a real player, with timing + autoplay.
-        pv = ctk.CTkFrame(st, fg_color="transparent")
-        pv.pack(fill="x", padx=8, pady=(2, 6))
-        ctk.CTkLabel(pv, text="پیش‌نمایش زنده (مثل پریمیر):",
-                     font=self._font(11),
-                     text_color="gray").pack(anchor="e", padx=4)
-        self.pv_box = ctk.CTkFrame(pv, fg_color="black", corner_radius=8,
-                                    border_color=SAFFRON, border_width=2)
-        self.pv_box.pack(fill="x", padx=4, pady=2)
-        # fixed 16:9-ish stage so caption position matches a real video
-        self.pv_stage = ctk.CTkFrame(self.pv_box, fg_color="black",
-                                     height=190)
-        self.pv_stage.pack(fill="x", padx=6, pady=(6, 0))
-        self.pv_stage.pack_propagate(False)
-        ctk.CTkLabel(self.pv_stage, text="16:9",
-                     font=self._font(11), text_color="#666666").pack(
-                         anchor="ne", padx=8, pady=4)
-        self.pv_text = ctk.CTkLabel(self.pv_stage, text="",
-                                    font=(FONT_FAMILY, 16, "bold"),
-                                    text_color="#FFEB3B", justify="center",
-                                    wraplength=700)
-        self.pv_text.pack(side="bottom", padx=10, pady=10)
-        self.pv_time = ctk.CTkLabel(self.pv_box, text="",
-                                    font=self._font(11),
-                                    text_color="#BBBBBB", justify="center")
-        self.pv_time.pack(padx=8, pady=(0, 2))
-        self.pv_warn = ctk.CTkLabel(self.pv_box, text="",
-                                    font=self._font(11),
-                                    text_color="#F0B43C", justify="center")
-        self.pv_warn.pack(padx=8, pady=(0, 4))
-        nav = ctk.CTkFrame(pv, fg_color="transparent")
-        nav.pack(fill="x", padx=4)
-        ctk.CTkButton(nav, text="کیو بعدی", width=90, font=self._font(12),
-                      fg_color="gray",
-                      command=self._pv_next).pack(side="left", padx=2)
-        self.pv_count = ctk.CTkLabel(nav, text="", font=self._font(11),
-                                     text_color="gray")
-        self.pv_count.pack(side="left", padx=6)
-        ctk.CTkButton(nav, text="کیو قبلی", width=90, font=self._font(12),
-                      fg_color="gray",
-                      command=self._pv_prev).pack(side="left", padx=2)
-        self.pv_play_btn = ctk.CTkButton(
-            nav, text="▶ پخش خودکار", width=110, font=self._font(12),
-            fg_color=TEAL, hover_color=TEAL_HOVER,
-            command=self._pv_toggle_play)
-        self.pv_play_btn.pack(side="right", padx=2)
 
         # 4. run
         run = ctk.CTkFrame(r, fg_color=CARD)
-        run.pack(fill="x", padx=10, pady=4)
+        run.pack(fill="x", padx=8, pady=3)
         self.btn = ctk.CTkButton(run, text="▶  ساخت زیرنویس (SRT)",
-                                 font=self._font(14, True),
+                                 font=self._font(13, True),
                                  fg_color=TEAL, hover_color=TEAL_HOVER,
                                  command=self._start)
-        self.btn.pack(side="right", padx=8, pady=8)
+        self.btn.pack(side="right", padx=6, pady=6)
         self.cancel_btn = ctk.CTkButton(run, text="■ لغو", width=80,
                                         fg_color=BORDO,
                                         hover_color=BORDO_HOVER,
@@ -486,17 +471,16 @@ class App:
 
         # log
         logf = ctk.CTkFrame(r, fg_color=CARD)
-        logf.pack(fill="both", expand=True, padx=10, pady=(4, 10))
+        logf.pack(fill="x", padx=8, pady=(3, 8))
         ctk.CTkLabel(logf, text="گزارش",
                      text_color=SAFFRON_TEXT,
                      font=self._font(13, True)).pack(anchor="e", padx=12,
                                                     pady=(6, 0))
-        self.log = ctk.CTkTextbox(logf, height=110,
-                                  font=self._font(12))
-        self.log.pack(fill="both", expand=True, padx=8, pady=8)
+        self.log = ctk.CTkTextbox(logf, height=72,
+                                  font=self._font(11))
+        self.log.pack(fill="x", padx=8, pady=(0, 6))
         self._log("آماده. اول «اسکن سیستم» را ببین، بعد مدل را دانلود کن.")
         self._paint_seg()
-        self._preview_rebuild()
         try:
             self._prompt_preview()
         except Exception:  # noqa: BLE001
@@ -565,11 +549,19 @@ class App:
         elif kind == "status":
             self.status.configure(text=data)
         elif kind == "dl_prog":
-            self.dl_prog.set(data)
+            try:
+                self.dl_prog.set(max(0.0, min(1.0, float(data))))
+            except (TypeError, ValueError):
+                pass
         elif kind == "prog":
-            # determinate overall batch progress 0..1
+            # determinate overall batch progress 0..1 — garbage never
+            # raises inside the poll loop (bad worker data is ignored).
+            try:
+                v = max(0.0, min(1.0, float(data)))
+            except (TypeError, ValueError):
+                return
             self.prog.configure(mode="determinate")
-            self.prog.set(float(data))
+            self.prog.set(v)
         elif kind == "prog_start":
             self.prog.configure(mode="determinate")
             self.prog.set(0)
@@ -585,6 +577,10 @@ class App:
             self.downloading = False
             self.dl_btn.configure(state="normal")
             self.dl_prog.set(1)
+            try:
+                self.root.after(600, self._dl_prog_forget)
+            except Exception:  # noqa: BLE001
+                pass
             self._refresh_rec()
         elif kind == "done":
             self.running = False
@@ -652,22 +648,9 @@ class App:
 
     def _on_setting_change(self, _value=None):
         # lang combo: persist immediately, keep the model recommendation
-        # in sync (lang affects the auto pick) and rebuild the preview
-        # (sample text follows the language).
+        # in sync (lang affects the auto pick).
         self._save_cfg()
         self._refresh_rec()
-        try:
-            self._preview_rebuild()
-        except AttributeError:
-            pass  # preview widgets not built yet
-
-    # ---------- caption style (Premiere-like) ----------
-    SAMPLE_EN = ("Hello! This is a live preview, showing exactly how your "
-                 "captions will roll on the video screen.")
-    # Mixed FA + number + Latin on purpose: exercises the BiDi path
-    # (numbers/Latin must not jump sides in the preview or the SRT).
-    SAMPLE_FA = ("سلام! این پیش‌نمایش زنده قسمت 12 است و WordLab دقیقاً "
-                 "نشان می‌دهد زیرنویس شما چطور روی صفحه ویدیو می‌آید.")
 
     def _mode_name(self):
         return {1: "single", 2: "two", 3: "three"}[self.lines_n]
@@ -676,7 +659,6 @@ class App:
         self.lines_n = n
         self._paint_seg()
         self._save_cfg()
-        self._preview_rebuild()
 
     def _paint_seg(self):
         for n, b in self.seg_btns.items():
@@ -694,115 +676,12 @@ class App:
         self.words_var.set(str(w))
         self.words_val.configure(text=str(w))
         self._save_cfg()
-        self._preview_rebuild()
 
     def _on_chars_slider(self, v):
         c = max(20, min(50, int(round(float(v) / 2.0)) * 2))
         self.chars_var.set(str(c))
         self.chars_val.configure(text=str(c))
         self._save_cfg()
-        self._preview_rebuild()
-
-    def _sample_words(self):
-        text = self.SAMPLE_FA if self.lang_var.get() == "fa" \
-            else self.SAMPLE_EN
-        words, t = [], 0.0
-        for w in text.split():
-            words.append({"word": w, "start": round(t, 2),
-                          "end": round(t + 0.24, 2)})
-            t += 0.30
-        return words
-
-    def _preview_cues(self):
-        from app import subtitles as subs
-        # Persian digits tolerated («۳» == 3, «۰٫۸» == 0.8)
-        max_words = bidi_helper.parse_int(self.words_var.get(), 3)
-        max_words = max(1, min(6, max_words))
-        max_chars = bidi_helper.parse_int(self.chars_var.get(), 32)
-        max_chars = max(20, min(50, max_chars))
-        max_gap = bidi_helper.parse_float(self.gap_var.get() or 0.8, 0.8)
-        max_gap = max(0.1, max_gap)
-        lines = subs._split_lines(self._sample_words(), max_words,
-                                  max_chars, max_gap)
-        step = self.lines_n
-        return [lines[i:i + step] for i in range(0, len(lines), step)]
-
-    def _preview_rebuild(self, reset=True):
-        if reset:
-            self.pv_idx = 0
-        cues = self._preview_cues()
-        if not cues:
-            self.pv_text.configure(text="…")
-            self.pv_count.configure(text="")
-            try:
-                self.pv_time.configure(text="")
-                self.pv_warn.configure(text="")
-            except AttributeError:
-                pass
-            return
-        self.pv_idx %= len(cues)
-        cue = cues[self.pv_idx]
-        lang = self.lang_var.get()
-        # Display layer only: isolates keep «12»/«WordLab» on the right
-        # side inside FA lines. File output stays logical (no controls).
-        self.pv_text.configure(
-            text=bidi_helper.display_cue(cue, lang),
-            justify="center" if lang != "fa" else "center")
-        self.pv_count.configure(
-            text="کیو %d از %d" % (self.pv_idx + 1, len(cues)))
-        try:
-            from app import subtitles as subs
-            first, last = cue[0][0], cue[-1][-1]
-            self.pv_time.configure(
-                text="%s --> %s  •  %d خط" % (
-                    subs.fmt(first["start"]), subs.fmt(last["end"]),
-                    len(cue)))
-            try:
-                _mc = bidi_helper.parse_int(self.chars_var.get(), 32)
-            except Exception:  # noqa: BLE001
-                _mc = 32
-            _long = [" ".join(w["word"] for w in ln)
-                     for ln in cue if len(" ".join(
-                         w["word"] for w in ln)) > _mc]
-            if _long:
-                self.pv_warn.configure(
-                    text="⚠ %d خط از سقف حروف (%d) بیشتر است" % (
-                        len(_long), _mc))
-            else:
-                self.pv_warn.configure(text="")
-        except AttributeError:
-            pass  # widgets not built yet (early _on_setting_change)
-
-    def _pv_next(self):
-        self.pv_idx += 1
-        self._preview_rebuild(reset=False)
-
-    def _pv_prev(self):
-        self.pv_idx -= 1
-        self._preview_rebuild(reset=False)
-
-    def _pv_toggle_play(self):
-        self.pv_playing = not self.pv_playing
-        try:
-            self.pv_play_btn.configure(
-                text="⏸ توقف" if self.pv_playing else "▶ پخش خودکار")
-        except Exception:  # noqa: BLE001
-            pass
-        if self.pv_playing:
-            self._pv_tick()
-
-    def _pv_tick(self):
-        if not self.pv_playing:
-            return
-        try:
-            self.pv_idx += 1
-            self._preview_rebuild(reset=False)
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            self.root.after(1600, self._pv_tick)
-        except Exception:  # noqa: BLE001
-            self.pv_playing = False
 
     # ---------- model download ----------
     def _download_model(self):
@@ -823,6 +702,7 @@ class App:
             return
         self.downloading = True
         self.dl_btn.configure(state="disabled")
+        self.dl_prog.pack(side="left", padx=8, pady=2)
         self.dl_prog.set(0)
         threading.Thread(target=self._dl_worker, args=(name,),
                          daemon=True).start()
@@ -996,7 +876,11 @@ class App:
         if name is None:
             self._need_profile()
             return
-        if not model_manager.is_cached(name):
+        # auto: the engine itself picks the best *cached* model, so only a
+        # machine with nothing downloaded has to hit the download button.
+        model_ready = bool(model_manager.cached_models()) if model == "auto" \
+            else model_manager.is_cached(name)
+        if not model_ready:
             messagebox.showwarning(
                 "ساب‌ساز",
                 "مدل %s هنوز دانلود نشده.\nاول «دانلود مدل» را بزن." % name)
@@ -1012,7 +896,7 @@ class App:
                     mode=self._mode_name(),
                     prompt=self.prompt_var.get() or None,
                     profile=self.profile)
-        threading.Thread(target=self._worker, args=(files, args),
+        threading.Thread(target=self._worker, args=(files, args, name),
                          daemon=True).start()
 
     def _cancel_run(self):
@@ -1020,13 +904,16 @@ class App:
             return
         self._cancel.set()
         self.cancel_btn.configure(state="disabled")
-        self.q.put(("log", "■ لغو درخواست شد… (فایل جاری تمام می‌شود)"))
+        self.q.put(("log", "■ لغو درخواست شد… (توقف بعد از بخش فعلی)"))
 
-    def _worker(self, files, args):
+    def _worker(self, files, args, disp_model):
         q = self.q
         t0 = time.time()
-        q.put(("log", "مدل %s در حال لود… (اولین بار کمی طول می‌کشد)"
-               % args["model"]))
+        q.put(("log",
+               "در حال لود مدل… (اولین بار کمی طول می‌کشد)"
+               if disp_model == "auto"
+               else "مدل %s در حال لود… (اولین بار کمی طول می‌کشد)"
+                    % disp_model))
         ok = 0
         cancelled = False
         total = len(files)

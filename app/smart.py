@@ -55,7 +55,7 @@ def needs_upgrade(model: str, lang: str, score: float) -> bool:
 
 
 def decide(lang: str, words: list, stats: dict, model: str):
-    """Returns (final_model, words, stats, notes:list)."""
+    """Returns (final_model, confidence_score, notes:list)."""
     notes = []
     score = quality(words, stats)
     notes.append("model=%s confidence=%.2f" % (model, score))

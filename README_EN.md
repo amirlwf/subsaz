@@ -23,6 +23,7 @@ From the [Releases](https://github.com/amirlwf/subsaz/releases) page:
 |---|---|
 | `SubSaz-Setup-x.y.z.exe` | Windows installer (Start-menu + desktop shortcut, uninstaller) |
 | `SubSaz-portable-win64.zip` | Portable — unzip and run `SubSaz.exe`, no install |
+| `SubSaz-cli-win64.zip` | Terminal version (`subsaz-cli`) — batch jobs and scripting, same engine |
 
 > 🇮🇷 If a model download fails, connect to a VPN and retry — model weights
 > are hosted on HuggingFace, which is sanctioned. The app tells you this itself.
@@ -81,6 +82,9 @@ subsaz-cli --dir C:\clips --lang en
 subsaz-cli --scan
 subsaz-cli --download-model small
 ```
+
+The `.exe` ships in `SubSaz-cli-win64.zip` — unzip and run it from that
+folder, or add the folder to your `PATH`.
 
 ## 🎯 Accuracy details
 

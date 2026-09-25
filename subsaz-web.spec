@@ -8,8 +8,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [("assets", "assets"), ("web_dist", "web_dist")]
 binaries = []
-hiddenimports = ["huggingface_hub", "psutil", "arabic_reshaper",
-                 "bidi.algorithm", "webview", "bottle"]
+hiddenimports = ["huggingface_hub", "psutil", "webview", "bottle"]
 
 for pkg in ("faster_whisper", "ctranslate2", "av", "webview", "bottle"):
     tmp = collect_all(pkg)
@@ -37,7 +36,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="SubSaz-Web",
+    name="SubSaz",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -57,5 +56,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="SubSaz-Web",
+    name="SubSaz",
 )

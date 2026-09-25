@@ -42,44 +42,18 @@ jobs:
             exit 1
           }
 
+      # one app: the WebView2/TypeScript UI (subsz-web.spec -> dist\SubSaz)
       - name: Build with PyInstaller
-        run: |
-          pyinstaller subsaz-gui.spec
-          pyinstaller subsaz-cli.spec
-          pyinstaller subsaz-web.spec
+        run: pyinstaller subsaz-web.spec
 
       - name: Portable ZIP
         shell: pwsh
-        run: |
-          Compress-Archive -Path dist/SubSaz/* -DestinationPath SubSaz-portable-win64.zip
-          Compress-Archive -Path dist/subsaz-cli/* -DestinationPath SubSaz-cli-win64.zip
-          Compress-Archive -Path dist/SubSaz-Web/* -DestinationPath SubSaz-Web-win64.zip
+        run: Compress-Archive -Path dist/SubSaz/* -DestinationPath SubSaz-portable-win64.zip
 
       - name: Inno Setup installer
         run: |
           choco install innosetup --no-progress -y
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer/subsaz.iss
-
-      # one download with everything: classic UI, WebView UI and the installer
-      - name: All-in-one pack
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path pack | Out-Null
-          Copy-Item -Recurse dist/SubSaz pack/SubSaz
-          Copy-Item -Recurse dist/SubSaz-Web pack/SubSaz-Web
-          Copy-Item release/SubSaz-Setup-*.exe pack/
-          @"
-          SubSaz all-in-one pack
-
-          SubSaz-Setup-*\.exe   installer (classic UI + WebView UI in subfolder "web")
-          SubSaz\SubSaz.exe             portable classic (Tk) interface
-          SubSaz-Web\SubSaz-Web.exe     portable TypeScript / WebView2 interface
-          SubSaz-cli\  (see SubSaz-cli-win64.zip for the command line tool)
-
-          The WebView2 interface needs the Windows 10/11 WebView2 runtime
-          (preinstalled on Win 11, auto-installed by the setup otherwise).
-          "@ | Out-File -FilePath pack/README.txt -Encoding utf8
-          Compress-Archive -Path pack/* -DestinationPath SubSaz-All-win64.zip
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
@@ -87,8 +61,5 @@ jobs:
           fail_on_unmatched_files: true
           generate_release_notes: true
           files: |
-            SubSaz-All-win64.zip
             SubSaz-portable-win64.zip
-            SubSaz-cli-win64.zip
-            SubSaz-Web-win64.zip
             release/SubSaz-Setup-*.exe

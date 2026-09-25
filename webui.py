@@ -1,17 +1,16 @@
-"""ساب‌ساز WebView — pywebview/WebView2 shell around the engine gui.py drives.
+"""ساب‌ساز WebView — pywebview/WebView2 shell around the engine in app/.
 
 The TypeScript page (web/src) talks to this file through the contract in
 web/API.md: the `Api` object is handed to pywebview as `js_api`, so the page
 calls `window.pywebview.api.<method>(...)`, and every UI event goes back out
 as `window.__push("<kind>", <json>)` (defined by web/src/bridge.ts).
 
-Design notes (why this looks like gui.py minus Tk):
-- gui.py's `self.q` queue survives: workers only ever `put()`, one flush
-  thread owns the browser, so events stay ordered and can be buffered until
-  the page has defined `__push`.
-- app/bidi.py is Tk-only (visual-order reshaping for widgets that paint
-  left-to-right). The browser does bidi itself, so every Persian string here
-  goes out in LOGICAL order — never through bidi.display().
+Design notes:
+- One queue decouples workers from the browser: workers only ever `put()`, a
+  single flush thread owns the browser, so events stay ordered and can be
+  buffered until the page has defined `__push`.
+- The browser applies bidi itself, so every Persian string here leaves in
+  LOGICAL order — no reshaping and no visual reordering on the Python side.
 - API methods run on pywebview worker threads, so they must never block:
   long work (scan, download, transcription) always goes to a thread.
 """

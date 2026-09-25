@@ -30,15 +30,24 @@
 |---|---|
 | `SubSaz-Setup-x.y.z.exe` | نصاب ویندوز / Windows installer |
 | `SubSaz-portable-win64.zip` | نسخه پرتابل، بدون نصب / Portable, no install |
-| `SubSaz-cli-win64.zip` | نسخه ترمینال / Terminal version (`subsaz-cli`) |
 
+هر نسخه منتشرشده دقیقاً همین دو فایل را دارد / Every release ships exactly these two files.
+
+> 🖥 یک برنامه واحد: بک‌اند پایتون `webui.py` + فرانت‌اند TypeScript در `web/` که در WebView2 ویندوز اجرا می‌شود.
+> One app: Python backend `webui.py` + TypeScript frontend in `web/`, running in Windows WebView2.
+>
 > 🇮🇷 اگر دانلود مدل ناموفق بود، با VPN دوباره تلاش کن — مدل‌ها روی HuggingFace هستند که تحریم است.
 > If a model download fails, retry with a VPN — model weights are hosted on HuggingFace.
+>
+> 📦 نسخه‌های **v0.0.6 و قدیمی‌تر** نسخه ترمینال (`subsaz-cli`) و رابط کاربری قدیمی Tk (`gui.py`) را هم داشتند؛
+> نسخه‌های جدید فقط همین یک برنامه را دارند.
+> Releases **v0.0.6 and older** also shipped the terminal build (`subsaz-cli`) and the legacy Tk UI (`gui.py`);
+> newer releases ship this single app only.
 
 ## 📖 راهنماها / Guides
 
 - [راهنمای کامل فارسی](README_FA.md) — نصب، اولین اجرا، انتخاب مدل، استایل‌های زیرنویس
-- [Full English guide](README_EN.md) — install, first run, model pick, subtitle styles, CLI
+- [Full English guide](README_EN.md) — install, first run, model pick, subtitle styles
 
 ## ⚖ لایسنس / License
 

@@ -23,10 +23,18 @@
 |---|---|
 | `SubSaz-Setup-x.y.z.exe` | نصاب ویندوز (شورتکات منوی استارت و دسکتاپ + آن‌اینستالر) |
 | `SubSaz-portable-win64.zip` | پرتابل — زیپ را باز کن و `SubSaz.exe` را اجرا کن، بدون نصب |
-| `SubSaz-cli-win64.zip` | نسخه ترمینال (`subsaz-cli`) — پردازش گروهی و اسکریپت، همان موتور |
 
+هر نسخه منتشرشده دقیقاً همین دو فایل را دارد.
+
+> 🖥 یک برنامه واحد: بک‌اند پایتون `webui.py` + فرانت‌اند TypeScript در `web/`
+> که در WebView2 ویندوز اجرا می‌شود.
+>
 > 🇮🇷 اگر دانلود مدل ناموفق بود، به VPN وصل شو و دوباره تلاش کن —
 > مدل‌ها روی HuggingFace هستند که تحریم است. خود برنامه هم این را می‌گوید.
+>
+> 📦 نسخه‌های **v0.0.6 و قدیمی‌تر** نسخه ترمینال (`subsaz-cli`) و رابط
+> کاربری قدیمی Tk (`gui.py`) را هم داشتند؛ نسخه‌های جدید فقط همین یک
+> برنامه را دارند.
 
 ## 🚀 اولین اجرا (۲ دقیقه)
 
@@ -49,12 +57,6 @@
 و انگلیسی از نقطه بهینه `small` استفاده می‌کند.
 می‌توانی مدل را دستی هم قفل کنی (`auto` = انتخاب خودکار سخت‌افزاری).
 
-از ترمینال هم می‌توانی چک کنی:
-
-```bat
-subsaz-cli --scan
-```
-
 ## ✨ استایل‌های زیرنویس
 
 - **single** — تک‌خطی (استایل کلاسیک شورت و تیک‌تاک)
@@ -71,19 +73,18 @@ subsaz-cli --scan
 ویدیو: `mp4 mov mkv webm ts flv wmv avi m4v mpg mpeg 3gp 3g2`
 صوت: `mp3 wav m4a aac flac ogg opus wma`
 
-## ⌨ خط فرمان (CLI)
+## 🧩 یک برنامه (بدون CLI)
 
-```bat
-subsaz-cli video.mp4 --lang en
-subsaz-cli video.mp4 --lang fa --mode two --max-chars 36
-subsaz-cli song.mp3 --lang en --words 2
-subsaz-cli --dir C:\clips --lang en
-subsaz-cli --scan
-subsaz-cli --download-model small
-```
+ساب‌ساز فقط یک برنامه دارد:
 
-فایل `subsaz-cli.exe` داخل `SubSaz-cli-win64.zip` است — زیپ را باز کن و از
-همان پوشه اجرا کن، یا پوشه را به `PATH` ویندوز اضافه کن.
+- `webui.py` — بک‌اند پایتون (موتور، دانلود مدل، تنظیمات) که با
+  pywebview / WebView2 در یک پنجره باز می‌شود
+- `web/` — رابط کاربری TypeScript که به `web_dist/` بیلد می‌شود و همان
+  داخل WebView2 سرو می‌شود
+
+دیگر خبری از `cli.py` و `gui.py` نیست: اسکن سیستم، دانلود مدل و ساخت SRT
+همه از همان یک پنجره انجام می‌شود. در انتشار هم فقط همین دو فایل هست —
+زیپ پرتابل و فایل نصاب (جدول بالا).
 
 ## 🎯 جزئیات دقت
 
@@ -98,11 +99,27 @@ subsaz-cli --download-model small
 
 ```bat
 pip install -r requirements.txt
-python gui.py
+subsaz-web.bat
+```
+
+یا مستقیم:
+
+```bat
+python webui.py
+```
+
+اسکریپت `subsaz-web.bat` همیشه از `.venv` همین مخزن استفاده می‌کند و اگر
+`web_dist/` نباشد بالا نمی‌آید. برای ساخت دوباره فرانت‌اند بعد از تغییر
+`web/`:
+
+```bat
+cd web && npm install --include=dev && npm run build
 ```
 
 به Python 3.11+ و `ffmpeg`/`ffprobe` در PATH نیاز داری
 (نسخه بسته‌بندی‌شده خودش دارد — فقط اجرای سورس این را می‌خواهد).
+Node.js و npm فقط برای ساخت فرانت‌اند لازم‌اند؛ چون `web_dist/` از پیش
+بیلدشده در مخزن هست، کلون تازه هم سریع بالا می‌آید.
 
 ## 🗂 ساختار پروژه
 
@@ -112,8 +129,10 @@ app/model_manager.py  دانلود یک‌باره، ادامه‌نیمه‌ک�
 app/transcribe.py     خط لوله مدیا ← کلمات
 app/subtitles.py      سازنده SRT تک‌خطی / دوخطی
 app/config.py         تنظیمات ماندگار (%LOCALAPPDATA%/SubSaz)
-gui.py                اپ دسکتاپ (CustomTkinter)
-cli.py                رابط ترمینال (همان موتور)
+webui.py              بک‌اند پایتون — پوسته pywebview / WebView2
+web/                  سورس رابط TypeScript (بیلد ← web_dist/)
+web_dist/             فرانت‌اند بیلدشده که داخل برنامه می‌رود
+subsaz-web.bat        اجراکننده توسعه (از .venv مخزن)
 installer/subsaz.iss  اسکریپت Inno Setup
 ```
 

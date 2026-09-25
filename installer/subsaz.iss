@@ -1,9 +1,9 @@
 ; SubSaz (ساب‌ساز) — Inno Setup script. Produces SubSaz-Setup-x.y.z.exe
 ; Requires: Inno Setup 6.5.0+ (PNG wizard images; PNG transparency needs 6.6+)
 ;          https://jrsoftware.org/isinfo.php
-; Build first: pyinstaller subsaz-gui.spec  -> dist\SubSaz\
+; Build first: pyinstaller subsaz-web.spec  -> dist\SubSaz\
 #define MyAppName "SubSaz"
-#define MyAppVersion "0.0.6"
+#define MyAppVersion "0.0.7"
 #define MyAppPublisher "SubSaz"
 #define MyAppExeName "SubSaz.exe"
 
@@ -37,19 +37,14 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
   GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Files]
-; main app (PyInstaller onedir output) — ffmpeg/ffprobe are already inside
-; _internal\assets\bin via the spec, do NOT ship a second copy
+; the app (PyInstaller onedir output): WebView2/TypeScript UI; ffmpeg/ffprobe
+; are already inside _internal\assets\bin via the spec, do NOT ship a copy
 Source: "..\dist\SubSaz\*"; DestDir: "{app}"; \
   Flags: ignoreversion recursesubdirs; \
-  Excludes: gui_started.log
-; WebView2/TypeScript UI — own folder so its _internal never collides
-Source: "..\dist\SubSaz-Web\*"; DestDir: "{app}\web"; \
-  Flags: ignoreversion recursesubdirs; \
-  Excludes: web_started.log
+  Excludes: *_started.log
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\SubSaz Web"; Filename: "{app}\web\SubSaz-Web.exe"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]

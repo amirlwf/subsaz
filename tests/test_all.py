@@ -1,9 +1,8 @@
-"""SubSaz test suite: core engine + GUI.
+"""SubSaz test suite: engine + WebView frontend.
 
 Run from repo root:  python tests/test_all.py
-GUI tests need a display; they skip cleanly headless (TclError).
-Arabic-reshaper/python-bidi are runtime deps (requirements.txt), so the
-bidi tests assert against the same reshaper the app feeds Tk.
+The only UI is webui.py + the TypeScript frontend in web/ (no Tk), so the
+frontend is covered by TestWebUIContract instead of widget tests.
 """
 import math
 import os
@@ -15,10 +14,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import arabic_reshaper
-
 from app import config as app_config
-from app import bidi as bidi_helper
 from app import hardware
 from app import model_manager
 from app import normalize
@@ -247,53 +243,6 @@ class TestNormalize(unittest.TestCase):
         self.assertIn("12", keep[1]["word"])
 
 
-class TestBidi(unittest.TestCase):
-    def test_ltr_passthrough(self):
-        self.assertEqual(bidi_helper.display("Hello 123"), "Hello 123")
-
-    def test_fa_number_keeps_ltr_run(self):
-        # Tk paints left-to-right with no bidi engine, so the line must
-        # arrive in *visual* order — no isolate controls (Vazirmatn has no
-        # glyph for them: Tk drew tofu boxes).
-        out = bidi_helper.display("سلام 12 تست")
-        self.assertIn("12", out)
-        self.assertNotIn("\u2066", out)
-        self.assertNotIn("\u2069", out)
-        # «سلام» is the first logical word → rightmost on screen
-        self.assertTrue(
-            out.endswith(arabic_reshaper.reshape("سلام")[::-1]),
-            out)
-
-    def test_fa_latin_keeps_ltr_run(self):
-        out = bidi_helper.display("سلام Hello تست")
-        self.assertIn("Hello", out)     # Latin run is never reversed
-        self.assertNotIn("\u2066", out)
-        self.assertNotIn("\u2067", out)
-
-    def test_fa_reversed_for_dumb_painter(self):
-        # pure RTL: visual order = reshaped glyphs, last logical letter first
-        out = bidi_helper.display("سلام")
-        self.assertEqual(out, arabic_reshaper.reshape("سلام")[::-1])
-
-    def test_idempotent(self):
-        once = bidi_helper.display("سلام 12 تست")
-        self.assertEqual(bidi_helper.display(once), once)
-
-    def test_file_text_stays_logical(self):
-        # engine output must NOT contain isolates — display layer only
-        words = make_words("سلام 12 تست")
-        line = " ".join(w["word"] for w in words[:3])
-        self.assertNotIn("\u2066", line)
-        out = bidi_helper.display(line)
-        self.assertNotIn("\u2066", out)
-        self.assertNotEqual(out, line)   # widget layer does the reordering
-
-    def test_persian_digits_parse(self):
-        self.assertEqual(bidi_helper.parse_int("۳", 0), 3)
-        self.assertAlmostEqual(bidi_helper.parse_float("۰٫۸", 0.0), 0.8)
-        self.assertEqual(bidi_helper.parse_int("bogus", 7), 7)
-
-
 class TestModelManager(unittest.TestCase):
     def test_block_classification(self):
         self.assertTrue(model_manager._looks_like_block(
@@ -461,146 +410,6 @@ class TestTranscribe(unittest.TestCase):
             (eng.probe_full, eng.extract_audio, eng.resolve_model,
              eng.transcribe) = orig
             mm.is_cached = cached
-
-
-try:
-    import tkinter as _tk
-    _root = _tk.Tk()
-    _root.withdraw()
-    _root.destroy()
-    _HAS_DISPLAY = True
-except Exception:  # noqa: BLE001 — headless CI
-    _HAS_DISPLAY = False
-
-
-@unittest.skipUnless(_HAS_DISPLAY, "no display for GUI tests")
-class TestGUI(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        import gui as _gui
-        cls.gui_mod = _gui
-        cls.cfg_backup = app_config.load()
-        cls.app = _gui.App()
-        cls.app.root.update_idletasks()
-        cls.app.root.update()
-
-    @classmethod
-    def tearDownClass(cls):
-        try:
-            cls.app.root.destroy()
-        except Exception:  # noqa: BLE001
-            pass
-        app_config.save(cls.cfg_backup)
-
-    def setUp(self):
-        self.app.root.update()
-
-    def test_theme_palette_applied(self):
-        self.assertEqual(self.app.btn.cget("fg_color"), "#15919B")
-        self.assertEqual(self.app.cancel_btn.cget("fg_color"), "#A93226")
-        for b in self.app.seg_btns.values():
-            self.assertTrue(b.cget("text"))
-
-    def test_logo_loads_or_skips_cleanly(self):
-        # must never crash; logo present in a normal checkout
-        from gui import _base
-        import os as _os
-        if _os.path.isfile(_os.path.join(_base, "assets", "icon.png")):
-            self.assertIsNotNone(self.app._logo_ref)
-
-    def test_rec_never_blocks_on_scan(self):
-        self.app.profile = None
-        self.assertEqual(self.app._rec_for("auto", "en"), (None, None))
-        self.app._refresh_rec()
-        # the widget stores bidi-reordered text (Tk has no bidi engine),
-        # so compare against what display() is supposed to produce.
-        self.assertEqual(self.app.rec_label.cget("text"),
-                         bidi_helper.display("در حال اسکن سیستم…"))
-
-    def test_widget_text_is_visual_order(self):
-        """Every string handed to a widget must arrive already reordered."""
-        import customtkinter as _ctk
-        lbl = _ctk.CTkLabel(self.app.root, text="سلام 12 تست")
-        try:
-            self.assertEqual(lbl.cget("text"),
-                             bidi_helper.display("سلام 12 تست"))
-            self.assertNotIn("\u2066", lbl.cget("text"))
-            # configure() path (dynamic labels: hw/status/rec/dl)
-            lbl.configure(text="مدل small-v3 دانلود شد")
-            self.assertEqual(
-                lbl.cget("text"),
-                bidi_helper.display("مدل small-v3 دانلود شد"))
-            # LTR-only text must be untouched
-            lbl.configure(text="Hello 123")
-            self.assertEqual(lbl.cget("text"), "Hello 123")
-        finally:
-            lbl.destroy()
-
-    def test_caption_panel_all_combos(self):
-        a = self.app
-        for n in (1, 2, 3):
-            a._set_lines(n)
-            self.assertEqual(a._mode_name(),
-                             {1: "single", 2: "two", 3: "three"}[n])
-            for w in (1, 6):
-                a._on_words_slider(w)
-                self.assertEqual(int(a.words_var.get()), w)
-                for c in (20, 50):
-                    a._on_chars_slider(c)
-                    a.root.update()
-                    self.assertEqual(int(a.chars_var.get()), c)
-
-    def test_lang_switch_persists(self):
-        a = self.app
-        a.lang_var.set("fa")
-        a._on_setting_change()
-        self.assertEqual(a.lang_var.get(), "fa")
-        a.lang_var.set("en")
-        a._on_setting_change()
-        self.assertEqual(a.lang_var.get(), "en")
-
-    def test_preview_removed(self):
-        # Premiere-style preview feature was fully removed
-        a = self.app
-        for attr in ("pv_text", "pv_count", "pv_time", "pv_warn",
-                     "pv_box", "pv_stage", "pv_play_btn", "pv_idx",
-                     "pv_playing"):
-            self.assertFalse(hasattr(a, attr), attr)
-        for meth in ("_preview_rebuild", "_preview_cues", "_pv_next",
-                     "_pv_prev", "_pv_toggle_play", "_pv_tick",
-                     "_sample_words"):
-            self.assertFalse(hasattr(a, meth), meth)
-
-    def test_poll_survives_garbage(self):
-        a = self.app
-        a.q.put(("prog", "not-a-float"))
-        a.q.put(("bogus-kind", None))
-        a._poll()  # must not raise; loop rescheduled in finally
-        a.root.update()
-
-    def test_warn_dispatched_on_main_thread(self):
-        import tkinter.messagebox as mb
-        seen = []
-        old = mb.showwarning
-        mb.showwarning = lambda t, m: seen.append((t, m))
-        try:
-            self.app._handle_q("warn", ("T", "M"))
-        finally:
-            mb.showwarning = old
-        self.assertEqual(seen, [("T", "M")])
-
-    def test_theme_toggle_both_modes(self):
-        a = self.app
-        a._toggle_theme()
-        a.root.update()
-        a._toggle_theme()
-        a.root.update()
-
-    def test_start_validation(self):
-        import inspect
-        src = inspect.getsource(self.gui_mod.App._start)
-        self.assertIn("1 <= words <= 6", src)
-        self.assertIn("20 <= max_chars <= 50", src)
 
 
 class TestWebUIContract(unittest.TestCase):

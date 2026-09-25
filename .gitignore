@@ -11,6 +11,11 @@ dist/
 release/
 *.spec.bak
 
+# frontend (TypeScript + vite) — web_dist/ IS committed so the app runs
+# without node; only the dependency tree is local
+web/node_modules/
+web/.vite/
+
 # SpecKit / AI agent workspace — local only, never committed
 .specify/
 .opencode/
@@ -24,7 +29,7 @@ MYNOTES.md
 *.local.md
 
 # local runs
-gui_started.log
+*_started.log
 subsaz_tmp/
 *.wav
 *.srt

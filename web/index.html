@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ساب‌ساز — زیرنویس دقیق کلمه‌به‌کلمه</title>
+    <link rel="icon" href="./logo.png" />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div id="app" class="app">
+      <header class="topbar">
+        <img class="logo" src="./logo.png" alt="" />
+        <div class="titles">
+          <h1>ساب‌ساز</h1>
+          <p class="tagline">ویدیو یا صوت بده، فایل SRT دقیق بگیر</p>
+        </div>
+        <div class="spacer"></div>
+        <span id="statusChip" class="chip">آماده</span>
+        <button id="themeBtn" class="icon-btn" title="تغییر پوسته">☀</button>
+      </header>
+
+      <!-- ۱. فایل‌ها -->
+      <section class="card">
+        <h2 class="sec">۱. فایل‌ها <span class="hint">(ویدیو یا صوت)</span></h2>
+        <div class="row wrap">
+          <button id="btnAddFiles" class="btn">+ فایل‌ها</button>
+          <button id="btnAddFolder" class="btn">+ پوشه</button>
+          <button id="btnClear" class="btn ghost">پاک کردن</button>
+          <span class="note" id="fmtNote"></span>
+        </div>
+        <ul id="fileList" class="filelist" hidden></ul>
+        <div id="emptyHint" class="empty">فایلی اضافه نشده — از دکمه‌های بالا انتخاب کن.</div>
+      </section>
+
+      <!-- ۲. سیستم و مدل -->
+      <section class="card">
+        <h2 class="sec">۲. سیستم و مدل</h2>
+        <div class="kv"><span class="k">سخت‌افزار</span><span id="hwLine" class="v">در حال اسکن سیستم…</span></div>
+        <div class="kv"><span class="k">پیشنهاد</span><span id="recLine" class="v">در حال اسکن سیستم…</span></div>
+        <div class="row wrap">
+          <label class="inline" for="modelSelect">مدل</label>
+          <select id="modelSelect"></select>
+          <button id="dlBtn" class="btn accent">دانلود مدل</button>
+          <button id="btnRescan" class="btn ghost">اسکن مجدد</button>
+        </div>
+        <div class="bar" id="dlBarWrap" hidden><div id="dlBar" class="fill"></div></div>
+      </section>
+
+      <!-- ۳. تنظیمات -->
+      <section class="card">
+        <h2 class="sec">۳. تنظیمات زیرنویس</h2>
+        <div class="grid">
+          <label>زبان
+            <select id="language">
+              <option value="auto">خودکار</option>
+              <option value="en">انگلیسی</option>
+              <option value="fa">فارسی</option>
+            </select>
+          </label>
+          <label>حالت
+            <select id="mode">
+              <option value="segment">۱ خط</option>
+              <option value="word">۲ خط</option>
+            </select>
+          </label>
+          <label>کاراکتر در خط
+            <input id="charsPerLine" type="number" min="1" max="500" />
+          </label>
+          <label>کلمه در خط
+            <input id="wordsPerLine" type="number" min="1" max="100" />
+          </label>
+          <label class="span2">کلمات خاص
+            <input id="specialWords" type="text" placeholder="مثلا: WordLab, BrandX" />
+          </label>
+          <label class="span2">پوشهٔ خروجی
+            <span class="inline-group">
+              <input id="outDir" type="text" readonly />
+              <button id="btnPickOut" class="btn ghost">انتخاب…</button>
+            </span>
+          </label>
+          <div class="checks">
+            <span class="k">فرمت‌ها</span>
+            <label><input id="fmtSrt" type="checkbox" checked /> SRT</label>
+            <label><input id="fmtVtt" type="checkbox" /> VTT</label>
+          </div>
+        </div>
+        <div class="row wrap">
+          <button id="startBtn" class="btn primary">ساخت زیرنویس</button>
+          <button id="cancelBtn" class="btn danger" hidden>لغو</button>
+          <button id="openOutBtn" class="btn ghost">باز کردن پوشهٔ خروجی</button>
+        </div>
+        <div class="bar" id="progBarWrap"><div id="progBar" class="fill"></div></div>
+      </section>
+
+      <!-- ۴. گزارش -->
+      <section class="card">
+        <h2 class="sec">۴. گزارش</h2>
+        <pre id="logBox" class="log"></pre>
+      </section>
+
+      <footer class="foot">SubSaz</footer>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

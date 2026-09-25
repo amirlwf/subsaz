@@ -3,7 +3,7 @@
 ;          https://jrsoftware.org/isinfo.php
 ; Build first: pyinstaller subsaz-gui.spec  -> dist\SubSaz\
 #define MyAppName "SubSaz"
-#define MyAppVersion "0.0.4"
+#define MyAppVersion "0.0.5"
 #define MyAppPublisher "SubSaz"
 #define MyAppExeName "SubSaz.exe"
 

@@ -603,5 +603,45 @@ class TestGUI(unittest.TestCase):
         self.assertIn("20 <= max_chars <= 50", src)
 
 
+class TestWebUIContract(unittest.TestCase):
+    """The TypeScript UI and webui.py must stay in sync with web/API.md."""
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def test_web_dist_is_prebuilt_and_rtl(self):
+        index = os.path.join(self.ROOT, "web_dist", "index.html")
+        self.assertTrue(
+            os.path.isfile(index),
+            "web_dist/index.html missing — run: cd web && npm run build")
+        with open(index, encoding="utf-8") as fh:
+            html = fh.read()
+        self.assertIn('dir="rtl"', html)
+        self.assertIn('lang="fa"', html)
+
+    def test_every_contract_method_is_implemented(self):
+        api_md = os.path.join(self.ROOT, "web", "API.md")
+        with open(api_md, encoding="utf-8") as fh:
+            names = sorted(set(re.findall(r"\| `([a-z_]+)\(", fh.read())))
+        self.assertTrue(names, "API.md documents no methods")
+
+        import webui  # noqa: F401 — must import without side effects
+        api_cls = next(
+            (obj for _, obj in vars(webui).items()
+             if isinstance(obj, type) and callable(getattr(obj, "get_state", None))),
+            None)
+        self.assertIsNotNone(api_cls, "webui.py exposes no API class with get_state()")
+        missing = [n for n in names
+                   if not callable(getattr(api_cls, n, None))]
+        self.assertEqual(missing, [],
+                         f"webui.py is missing contract methods: {missing}")
+
+    def test_release_spec_ships_the_frontend(self):
+        with open(os.path.join(self.ROOT, "subsaz-web.spec"),
+                  encoding="utf-8") as fh:
+            spec = fh.read()
+        self.assertIn('["webui.py"]', spec)
+        self.assertIn('("web_dist", "web_dist")', spec)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

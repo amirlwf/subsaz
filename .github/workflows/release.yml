@@ -34,16 +34,26 @@ jobs:
           $probe = Get-ChildItem ffmpeg-dl -Recurse -Filter ffprobe.exe | Select-Object -First 1
           Copy-Item $probe.FullName assets/bin/ffprobe.exe
 
+      - name: Check prebuilt web frontend (web_dist is committed)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path web_dist/index.html)) {
+            Write-Host "web_dist missing — rebuild with: cd web; npm install --include=dev; npm run build"
+            exit 1
+          }
+
       - name: Build with PyInstaller
         run: |
           pyinstaller subsaz-gui.spec
           pyinstaller subsaz-cli.spec
+          pyinstaller subsaz-web.spec
 
       - name: Portable ZIP
         shell: pwsh
         run: |
           Compress-Archive -Path dist/SubSaz/* -DestinationPath SubSaz-portable-win64.zip
           Compress-Archive -Path dist/subsaz-cli/* -DestinationPath SubSaz-cli-win64.zip
+          Compress-Archive -Path dist/SubSaz-Web/* -DestinationPath SubSaz-Web-win64.zip
 
       - name: Inno Setup installer
         run: |
@@ -58,4 +68,5 @@ jobs:
           files: |
             SubSaz-portable-win64.zip
             SubSaz-cli-win64.zip
+            SubSaz-Web-win64.zip
             release/SubSaz-Setup-*.exe

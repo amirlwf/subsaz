@@ -85,6 +85,73 @@ from app import transcribe as engine
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
+
+# ---- Tk has no bidi engine ------------------------------------------------
+# Tk 8.6 shapes Arabic but paints in *logical* order, left to right, so a
+# Persian sentence came out word-for-word backwards and Latin runs embedded
+# in Persian («مدل small-v3», «فایل SRT») landed on the wrong side. The old
+# U+2066/U+2069 isolates changed nothing — Vazirmatn has no glyph for them
+# and Tk drew tofu boxes. Every string handed to a widget therefore goes
+# through bidi.display(): reshaped to presentation forms + reordered to
+# visual order. It is idempotent, so constructor, configure() and explicit
+# call sites can all safely wrap the same string.
+def _t(value, base="auto"):
+    """Display-safe (visual order) text for a Tk/CTk widget."""
+    if not isinstance(value, str):
+        return value
+    try:
+        return bidi_helper.display(value, base)
+    except Exception:  # noqa: BLE001 — bad string must never kill the UI
+        return value
+
+
+def _bidi_widget(widget_cls, keys):
+    """Run the given text kwargs through _t() for this widget class."""
+    orig_init = widget_cls.__init__
+    orig_conf = getattr(widget_cls, "configure", None)
+
+    def _apply(kw):
+        for k in keys:
+            v = kw.get(k)
+            if isinstance(v, str):
+                kw[k] = _t(v)
+            elif isinstance(v, (list, tuple)):
+                kw[k] = [_t(x) if isinstance(x, str) else x for x in v]
+
+    def __init__(self, *args, **kw):
+        _apply(kw)
+        orig_init(self, *args, **kw)
+
+    widget_cls.__init__ = __init__
+    if orig_conf is not None:
+        def configure(self, *args, **kw):
+            _apply(kw)
+            return orig_conf(self, *args, **kw)
+
+        widget_cls.configure = configure
+
+
+_bidi_widget(ctk.CTkLabel, ("text",))
+_bidi_widget(ctk.CTkButton, ("text",))
+_bidi_widget(ctk.CTkEntry, ("placeholder_text",))
+
+# tkinter.messagebox draws with Tk widgets, so it needs the same treatment.
+# (filedialog / window titles are native Windows chrome and already render
+# bidi correctly — they must keep logical text.)
+for _mb_name in ("showinfo", "showwarning", "showerror", "askyesno",
+                 "askokcancel", "askquestion", "askretrycancel"):
+    if hasattr(messagebox, _mb_name):
+        _mb_orig = getattr(messagebox, _mb_name)
+
+        def _mb_wrap(fn):
+            def _wrapped(*a, **kw):
+                return fn(*(_t(x) if isinstance(x, str) else x for x in a),
+                          **{k: _t(v) if isinstance(v, str) else v
+                             for k, v in kw.items()})
+            return _wrapped
+
+        setattr(messagebox, _mb_name, _mb_wrap(_mb_orig))
+
 MODELS = ("auto", "large-v3-turbo", "medium", "small", "base", "tiny")
 MODEL_MB = {"auto": 0, "large-v3-turbo": 1600, "medium": 1500,
             "small": 460, "base": 145, "tiny": 75}
@@ -123,6 +190,7 @@ class App:
         except Exception:  # noqa: BLE001
             pass
         self.q = queue.Queue()
+        self.files = []   # logical paths; the listbox shows display() order
         self.running = False
         self.downloading = False
         self.profile = None
@@ -485,6 +553,17 @@ class App:
             self._prompt_preview()
         except Exception:  # noqa: BLE001
             pass
+        # long lines used to be clipped by a fixed wraplength=560 on narrow
+        # windows — tie them to the actual window width instead.
+        self._wraplength = None
+        self.root.bind("<Configure>", self._on_resize, add="+")
+        self._on_resize()
+        if not getattr(bidi_helper, "DISPLAY_READY", True):
+            # without these two packages display() silently degrades to
+            # logical order and Persian shows up mirrored / unjoined
+            self._log("⚠ نمایش فارسی درست نیست: بسته‌های arabic-reshaper و "
+                      "python-bidi نصب نیستند (pip install -r "
+                      "requirements.txt) و بعد دوباره اجرا کن.")
 
     # ---------- theme ----------
     @staticmethod
@@ -513,9 +592,35 @@ class App:
         except Exception:  # noqa: BLE001
             pass
 
+    def _on_resize(self, event=None):
+        """Recompute wraplength from the real window width.
+
+        The long status lines (hw/rec/prompt) carried a fixed
+        wraplength=560, so on a narrow window (minsize is 600) the text was
+        clipped instead of wrapped — one of the visible UI bugs.
+        """
+        if event is not None and event.widget is not self.root:
+            return
+        try:
+            width = self.root.winfo_width()
+        except Exception:  # noqa: BLE001
+            return
+        if width <= 1:
+            return
+        wl = max(240, width - 80)
+        if wl == self._wraplength:
+            return
+        self._wraplength = wl
+        for wdg in (self.hw_label, self.rec_label, self.prompt_echo,
+                    self.status):
+            try:
+                wdg.configure(wraplength=wl)
+            except Exception:  # noqa: BLE001
+                pass
+
     # ---------- log / poll ----------
     def _log(self, msg):
-        self.log.insert("end", msg + "\n")
+        self.log.insert("end", _t(msg) + "\n")
         self.log.see("end")
 
     def _poll(self):
@@ -547,7 +652,7 @@ class App:
             except Exception:  # noqa: BLE001
                 self._log("⚠ %s" % msg)
         elif kind == "status":
-            self.status.configure(text=data)
+            self.status.configure(text=_t(data))
         elif kind == "dl_prog":
             try:
                 self.dl_prog.set(max(0.0, min(1.0, float(data))))
@@ -742,8 +847,15 @@ class App:
                         "*.m4a *.aac *.flac *.ogg *.opus *.wma"),
                        ("All files", "*.*")])
         for f in files:
-            if f not in self.lst.get(0, "end"):
-                self.lst.insert("end", f)
+            self._add_file(f)
+
+    def _add_file(self, path):
+        """Queue one path: self.files keeps the real path, the listbox only
+        ever shows the bidi-corrected (visual order) rendering of it."""
+        if not path or path in self.files:
+            return
+        self.files.append(path)
+        self.lst.insert("end", _t(path))
 
     def _pick_folder(self):
         d = filedialog.askdirectory(title="انتخاب پوشه")
@@ -753,11 +865,10 @@ class App:
     def _pick_folder_into(self, d):
         for f in sorted(os.listdir(d)):
             if f.lower().endswith(engine.ALL_EXTS):
-                p = os.path.join(d, f)
-                if p not in self.lst.get(0, "end"):
-                    self.lst.insert("end", p)
+                self._add_file(os.path.join(d, f))
 
     def _clear(self):
+        self.files = []
         self.lst.delete(0, "end")
 
     def _pick_out(self):
@@ -799,9 +910,8 @@ class App:
             p = p.strip("{}")
             if os.path.isdir(p):
                 self._pick_folder_into(p)
-            elif p.lower().endswith(engine.ALL_EXTS) \
-                    and p not in self.lst.get(0, "end"):
-                self.lst.insert("end", p)
+            elif p.lower().endswith(engine.ALL_EXTS):
+                self._add_file(p)
 
     def _prompt_preview(self):
         """Live BiDi-corrected echo of the prompt entry (typing helper)."""
@@ -811,8 +921,9 @@ class App:
             return
         try:
             if raw and bidi_helper.contains_rtl(raw):
-                self.prompt_echo.configure(
-                    text="نمایش صحیح: " + bidi_helper.display(raw))
+                # one display() pass over prefix+text together — the prefix
+                # is logical too and must be reordered with the rest.
+                self.prompt_echo.configure(text=_t("نمایش صحیح: " + raw))
             else:
                 self.prompt_echo.configure(text="")
         except Exception:  # noqa: BLE001
@@ -843,7 +954,7 @@ class App:
     def _start(self):
         if self.running:
             return
-        files = list(self.lst.get(0, "end"))
+        files = list(self.files)
         if not files:
             messagebox.showwarning("ساب‌ساز", "اول فایل انتخاب کن.")
             return

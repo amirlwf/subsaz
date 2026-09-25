@@ -1,7 +1,9 @@
-"""SubSaz test suite: core engine + GUI. stdlib only.
+"""SubSaz test suite: core engine + GUI.
 
 Run from repo root:  python tests/test_all.py
 GUI tests need a display; they skip cleanly headless (TclError).
+Arabic-reshaper/python-bidi are runtime deps (requirements.txt), so the
+bidi tests assert against the same reshaper the app feeds Tk.
 """
 import math
 import os
@@ -12,6 +14,8 @@ import threading
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import arabic_reshaper
 
 from app import config as app_config
 from app import bidi as bidi_helper
@@ -247,16 +251,29 @@ class TestBidi(unittest.TestCase):
     def test_ltr_passthrough(self):
         self.assertEqual(bidi_helper.display("Hello 123"), "Hello 123")
 
-    def test_fa_number_isolated(self):
+    def test_fa_number_keeps_ltr_run(self):
+        # Tk paints left-to-right with no bidi engine, so the line must
+        # arrive in *visual* order — no isolate controls (Vazirmatn has no
+        # glyph for them: Tk drew tofu boxes).
         out = bidi_helper.display("سلام 12 تست")
-        # Latin/number run wrapped so Tk keeps it LTR inside RTL
-        self.assertIn("٬12٭".replace("٬", "\u2066").replace("٭", "\u2069"),
-                      out)
-        self.assertTrue(out.startswith("\u2067") and out.endswith("\u2069"))
+        self.assertIn("12", out)
+        self.assertNotIn("\u2066", out)
+        self.assertNotIn("\u2069", out)
+        # «سلام» is the first logical word → rightmost on screen
+        self.assertTrue(
+            out.endswith(arabic_reshaper.reshape("سلام")[::-1]),
+            out)
 
-    def test_fa_latin_isolated(self):
+    def test_fa_latin_keeps_ltr_run(self):
         out = bidi_helper.display("سلام Hello تست")
-        self.assertIn("\u2066Hello\u2069", out)
+        self.assertIn("Hello", out)     # Latin run is never reversed
+        self.assertNotIn("\u2066", out)
+        self.assertNotIn("\u2067", out)
+
+    def test_fa_reversed_for_dumb_painter(self):
+        # pure RTL: visual order = reshaped glyphs, last logical letter first
+        out = bidi_helper.display("سلام")
+        self.assertEqual(out, arabic_reshaper.reshape("سلام")[::-1])
 
     def test_idempotent(self):
         once = bidi_helper.display("سلام 12 تست")
@@ -267,7 +284,9 @@ class TestBidi(unittest.TestCase):
         words = make_words("سلام 12 تست")
         line = " ".join(w["word"] for w in words[:3])
         self.assertNotIn("\u2066", line)
-        self.assertIn("\u2066", bidi_helper.display(line))
+        out = bidi_helper.display(line)
+        self.assertNotIn("\u2066", out)
+        self.assertNotEqual(out, line)   # widget layer does the reordering
 
     def test_persian_digits_parse(self):
         self.assertEqual(bidi_helper.parse_int("۳", 0), 3)
@@ -493,7 +512,29 @@ class TestGUI(unittest.TestCase):
         self.app.profile = None
         self.assertEqual(self.app._rec_for("auto", "en"), (None, None))
         self.app._refresh_rec()
-        self.assertIn("اسکن", self.app.rec_label.cget("text"))
+        # the widget stores bidi-reordered text (Tk has no bidi engine),
+        # so compare against what display() is supposed to produce.
+        self.assertEqual(self.app.rec_label.cget("text"),
+                         bidi_helper.display("در حال اسکن سیستم…"))
+
+    def test_widget_text_is_visual_order(self):
+        """Every string handed to a widget must arrive already reordered."""
+        import customtkinter as _ctk
+        lbl = _ctk.CTkLabel(self.app.root, text="سلام 12 تست")
+        try:
+            self.assertEqual(lbl.cget("text"),
+                             bidi_helper.display("سلام 12 تست"))
+            self.assertNotIn("\u2066", lbl.cget("text"))
+            # configure() path (dynamic labels: hw/status/rec/dl)
+            lbl.configure(text="مدل small-v3 دانلود شد")
+            self.assertEqual(
+                lbl.cget("text"),
+                bidi_helper.display("مدل small-v3 دانلود شد"))
+            # LTR-only text must be untouched
+            lbl.configure(text="Hello 123")
+            self.assertEqual(lbl.cget("text"), "Hello 123")
+        finally:
+            lbl.destroy()
 
     def test_caption_panel_all_combos(self):
         a = self.app

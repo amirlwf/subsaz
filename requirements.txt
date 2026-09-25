@@ -4,6 +4,8 @@ faster-whisper==1.2.1
 huggingface_hub==1.32.0
 psutil==7.2.2
 tkinterdnd2==0.6.3  # drag & drop onto the file list (optional at runtime)
+arabic-reshaper==3.0.1   # Arabic presentation forms (Tk has no bidi)
+python-bidi==0.6.11      # Unicode bidi reordering for widget text
 
 # build / packaging (dev machines + CI only)
 pyinstaller==6.22.3

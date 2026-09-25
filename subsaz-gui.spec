@@ -4,7 +4,8 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [("assets", "assets")]
 binaries = []
-hiddenimports = ["customtkinter", "huggingface_hub", "psutil"]
+hiddenimports = ["customtkinter", "huggingface_hub", "psutil",
+                 "arabic_reshaper", "bidi.algorithm"]
 
 for pkg in ("faster_whisper", "ctranslate2", "av", "customtkinter",
             "tkinterdnd2"):

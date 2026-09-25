@@ -1,35 +1,58 @@
-"""BiDi helpers for mixed Persian/English/number text (stdlib only).
+"""BiDi helpers for mixed Persian/English/number text.
 
-Problem: Tk/CTk widgets use a simple BiDi rendering where a Latin or
-number run inside a Persian line can jump to the wrong side while typing
-or in the live preview (e.g. «قسمت 12» or «سلام Hello تست»).
+Why this module exists: Tk 8.6 applies Arabic *shaping* but has **no bidi
+engine** — it paints every string in logical (storage) order, left to right.
+Measured on this project's own widgets (pixel probe of a tk.Text / tk.Label):
 
-SRT files on disk always stay in *logical* order (correct for players).
-These helpers produce a *display* string with Unicode isolates so Tk
-renders the same logical text correctly. Idempotent: calling display()
-twice does not stack controls.
+* «سلام» was drawn with the first letter on the left, i.e. mirrored;
+* «سلام ZZZ» drew سلام leftmost while «ZZZ سلام» drew ZZZ leftmost, so
+  runs inside a line were never reordered at all;
+* U+2066/U+2069 isolates (the previous "fix") are *drawn as tofu boxes*,
+  because Vazirmatn has no glyph for them.
+
+So Persian sentences came out backwards and Latin words embedded in Persian
+landed on the wrong side. display() therefore does the work a bidi-aware
+renderer would do for us:
+
+1. reshape Arabic letters to their presentation forms (U+FE70..U+FEFC /
+   U+FB50..U+FDFF) so the glyph shapes survive reordering, then
+2. reorder the string to visual order with the Unicode bidi algorithm.
+
+The result is handed to Tk as-is: a left-to-right painter now draws exactly
+what a correct renderer would draw.
+
+SRT/engine/file text is NEVER modified — apply this only at widget level.
+Idempotent: text that already carries presentation forms is returned as is,
+so double-wrapping a widget string cannot garble it.
 """
 import re
 
-# Directional isolates / marks (all invisible, zero-width)
-LRI = "\u2066"  # left-to-right isolate (wrap English / numbers)
-RLI = "\u2067"  # right-to-left isolate (wrap whole FA line)
-PDI = "\u2069"  # pop directional isolate
+try:  # runtime deps (see requirements.txt); degrade to logical order
+    import arabic_reshaper as _arabic_reshaper
+    from bidi.algorithm import get_display as _bidi_get_display
+except Exception:  # noqa: BLE001 — optional, display() falls back
+    _arabic_reshaper = None
+    _bidi_get_display = None
+
+# The UI must know when it is running WITHOUT these: display() then falls
+# back to logical order, so Persian renders mirrored / letters unjoined.
+DISPLAY_READY = _arabic_reshaper is not None and _bidi_get_display is not None
+
+# Directional isolates / marks — stripped before processing so old
+# persisted strings (and any leftover control chars) never reach Tk.
+LRI = "\u2066"
+RLI = "\u2067"
+PDI = "\u2069"
 LRM = "\u200e"
 RLM = "\u200f"
-_FS = "\u2060"  # word joiner (unused, kept for reference)
-
-# Strip set — removed before (re-)applying so display() is idempotent.
 _STRIP_RE = re.compile("[\u200e\u200f\u202a-\u202e\u2066-\u2069]")
 
 # Any strong RTL char: Hebrew, Arabic, Persian extensions, presentation forms.
 _RTL_RE = re.compile(
     "[\u0591-\u07ff\ufb1d-\ufdfd\ufe70-\ufefc\U00010e60-\U00010e7f]")
 
-# Latin/number runs that must stay LTR inside an RTL line:
-# words, brands (WordLab), decimals, time-like 00:01, paths, @handles.
-_LTR_RUN = re.compile(
-    r"[A-Za-z0-9\u00c0-\u00ff]+(?:[._\-/@:][A-Za-z0-9\u00c0-\u00ff]+)*")
+# Blocks that hold Arabic-script *letters* we can reshape.
+_AR_BLOCK_RE = re.compile("[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]")
 
 # Persian + Arabic-Indic digits -> ASCII (for numeric settings typed
 # with a Persian keyboard, e.g. «۳» or «۰٫۸»).
@@ -44,10 +67,29 @@ _DIGIT_MAP.update({
     ord("٪"): "%",
 })
 
+_BASE_DIR = {"rtl": "R", "ltr": "L", "auto": None}
+
 
 def contains_rtl(text: str) -> bool:
     """True when the text has any strong right-to-left character."""
     return bool(text and _RTL_RE.search(text))
+
+
+def _has_arabic_letters(text: str) -> bool:
+    """True when there is at least one reshappable Arabic-script letter."""
+    for ch in text:
+        if ch.isalpha() and _AR_BLOCK_RE.match(ch):
+            return True
+    return False
+
+
+def _has_presentation_forms(text: str) -> bool:
+    """True when the text already went through the reshaper."""
+    for ch in text:
+        o = ord(ch)
+        if 0xFB50 <= o <= 0xFDFF or 0xFE70 <= o <= 0xFEFF:
+            return True
+    return False
 
 
 def en_digits(text: str) -> str:
@@ -74,22 +116,35 @@ def parse_float(text, default):
 
 
 def display(text: str, base_dir: str = "auto") -> str:
-    """Return a Tk-display-safe string for mixed-direction text.
+    """Return a Tk-display-safe (visual order) string for mixed text.
 
     - Pure LTR/neutral text is returned unchanged.
-    - RTL lines get Latin/number runs wrapped in LRI...PDI and the
-      whole line wrapped in RLI...PDI so numbers don't jump sides.
+    - Arabic letters are reshaped, then the line is reordered to visual
+      order, so a dumb left-to-right painter draws it correctly.
+    - base_dir forces the paragraph direction («rtl»/«ltr»), «auto» takes
+      it from the first strong character.
+    - Idempotent: a string that already carries presentation forms is
+      returned untouched, so applying it twice is harmless.
     - The SRT/engine text is NEVER modified — apply only at widget level.
     """
     if not text:
         return text
-    clean = _STRIP_RE.sub("", text)
+    clean = _STRIP_RE.sub("", str(text))
     if base_dir == "ltr":
         return clean
-    if base_dir == "auto" and not contains_rtl(clean):
+    if not contains_rtl(clean):
         return clean
-    wrapped = _LTR_RUN.sub(lambda m: LRI + m.group(0) + PDI, clean)
-    return RLI + wrapped + PDI
+    # Nothing reshappable (Hebrew/digits only) or already display-ordered.
+    if not _has_arabic_letters(clean) or _has_presentation_forms(clean):
+        return clean
+    if _arabic_reshaper is None or _bidi_get_display is None:
+        return clean
+    try:
+        shaped = _arabic_reshaper.reshape(clean)
+        out = _bidi_get_display(shaped, base_dir=_BASE_DIR.get(base_dir))
+        return out if isinstance(out, str) else clean
+    except Exception:  # noqa: BLE001 — a bad string must never kill the UI
+        return clean
 
 
 def display_cue(lines, lang: str = "fa") -> str:

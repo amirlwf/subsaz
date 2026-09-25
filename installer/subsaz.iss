@@ -3,7 +3,7 @@
 ;          https://jrsoftware.org/isinfo.php
 ; Build first: pyinstaller subsaz-gui.spec  -> dist\SubSaz\
 #define MyAppName "SubSaz"
-#define MyAppVersion "0.0.5"
+#define MyAppVersion "0.0.6"
 #define MyAppPublisher "SubSaz"
 #define MyAppExeName "SubSaz.exe"
 
@@ -42,9 +42,14 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
 Source: "..\dist\SubSaz\*"; DestDir: "{app}"; \
   Flags: ignoreversion recursesubdirs; \
   Excludes: gui_started.log
+; WebView2/TypeScript UI — own folder so its _internal never collides
+Source: "..\dist\SubSaz-Web\*"; DestDir: "{app}\web"; \
+  Flags: ignoreversion recursesubdirs; \
+  Excludes: web_started.log
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\SubSaz Web"; Filename: "{app}\web\SubSaz-Web.exe"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
